@@ -1,7 +1,13 @@
 ## miMusic
 
-This project have to goal to create a music app the most nativelly and close 
-to the linux system. This music app have firstly in objective to make it the most 
-performance possible and the language Rust is perfect for that's. Rust have 
-the power to be very efficient and have memory safety to avoid most of 
-the problems of C language.
+A high-performance music player built using the 
+Rust programming language, optimized for 
+running on Raspberry Pi devices. This project 
+focuses on creating an efficient, lightweight, 
+and responsive audio playback experience on 
+resource-constrained hardware while serving 
+as an introductory project to learn Rust.
+
+Rust is chosen over C primarily due to 
+its strong focus on memory safety without 
+sacrificing performance.
