@@ -4,4 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-rodio = "0.20.1"
+id3 = "1.16.2"
+rodio = { version = "0.20.1", default-features = false, features = ["symphonia-all"] }
