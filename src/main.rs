@@ -1,3 +1,5 @@
+#![feature(str_split_remainder)]
+
 use std::io;
 use std::io::BufReader;
 use std::fs::File;
@@ -18,8 +20,9 @@ fn d_playing_infos(sink: &Sink, player: &Player) {
 	   	println!("{}: {}", key, value);
 	    }
 	}
-	println!("Position of song: {}s", &sink.get_pos().as_secs());
+	println!("Position of song: {}s", sink.get_pos().as_secs());
 	println!("Volume: {}", sink.volume());
+	println!("Nombre de musiques en attente: {}", sink.len());
     }
 }
 
@@ -35,17 +38,19 @@ fn main() {
                 .read_line(&mut input)
                 .unwrap();
 
-        let input = input.as_str();
-
-        match input {
-            "pause\n" => {
+	let mut args = input.trim_end().split(" ");
+	let first_parameter = args.next().unwrap();
+	
+        match first_parameter {
+            "pause" => {
                 sink.pause();
                 d_playing_infos(&sink, &player);
             },
 
-            "play\n" => {
-                if sink.empty() {
-                    let file = File::open("song.mp3").unwrap();
+            "play" => {
+                if !sink.is_paused() && args.remainder().is_some() {
+		    let song_name = args.next().unwrap();
+                    let file = File::open(song_name).unwrap();
 		    let tag = Tag::read_from2(&file).unwrap();
 		    
 		    for frame in tag.frames() {
@@ -85,7 +90,7 @@ fn main() {
                 }
             },
 
-            "exit\n" => {
+            "exit" => {
                 break;
             },
 
