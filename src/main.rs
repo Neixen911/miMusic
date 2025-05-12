@@ -64,13 +64,13 @@ fn main() {
                 .read_line(&mut input)
                 .unwrap();
 
-	let mut args = input.trim_end().split(" ");
-	let first_parameter = args.next().unwrap();
+		let mut args = input.trim_end().split(" ");
+		let first_parameter = args.next().unwrap();
 	
         match first_parameter {
-	    "infos" => {
-		d_playing_infos(&sink, &player);
-	    },
+	    	"infos" => {
+				d_playing_infos(&sink, &player);
+	    	},
 
             "pause" => {
                 sink.pause();
@@ -78,65 +78,61 @@ fn main() {
 
             "play" => {
                 if !sink.is_paused() && args.remainder().is_some() {
-		    let song_name = args.next().unwrap();
-                    let file = File::open(song_name).unwrap();
-		    let tag = Tag::read_from2(&file).unwrap();
-		    
-		    for frame in tag.frames() {
-			let id = frame.id();
-			
-			match frame.content() {
-			    Content::Text(value) => {
+					let song_name = args.next().unwrap();
+					let file = File::open(song_name).unwrap();
+					let tag = Tag::read_from2(&file).unwrap();
 				
-				match id {
-				    "TIT2" => {
-					player.m_song_infos.insert(String::from("title"), value.to_string());
-				    }
+					for frame in tag.frames() {
+						let id = frame.id();
+					
+						match frame.content() {
+							Content::Text(value) => {
+								match id {
+									"TIT2" => {
+										player.m_song_infos.insert(String::from("title"), value.to_string());
+									}
+									"TPE1" => {
+										player.m_song_infos.insert(String::from("artist"), value.to_string());
+									}
 
-				    "TPE1" => {
-					player.m_song_infos.insert(String::from("artist"), value.to_string());
-				    }
+									_default => {
+										continue;
+									}
+								}
+							}
+							_content => {
+								continue;
+							}
+						}
+					}
 
-				    _default => {
-					continue;
-				    }
+					let buffer = BufReader::new(file);
+					let source = Decoder::new_mp3(buffer).unwrap();
+					let (minutes, seconds) = get_audio_duration(song_name);
+					player.m_song_infos.insert(String::from("duration"), minutes.to_string() + ":" + &seconds.to_string());
+					sink.append(source);
+
+					let playlist_pos = Arc::new(AtomicU32::new(0));
+					let playlist_pos_clone = playlist_pos.clone();
+					sink.append(rodio::source::EmptyCallback::<i16>::new(Box::new(move || {
+						println!("empty callback is now running");
+						playlist_pos_clone.fetch_add(1, Ordering::Relaxed);
+					})));
+					println!("playlist_pos: {}", playlist_pos.load(Ordering::Relaxed));
+				} else {
+					sink.play();
 				}
+			},
 
-			    }
+			"skip" => {
+				sink.skip_one();
+			},
 
-			    _content => {
-				continue;
-			    }
-			}
-		    }
+			"exit" => {
+				break;
+			},
 
-        	let buffer = BufReader::new(file);
-		    let source = Decoder::new_mp3(buffer).unwrap();
-		    let (minutes, seconds) = get_audio_duration(song_name);
-		    player.m_song_infos.insert(String::from("duration"), minutes.to_string() + ":" + &seconds.to_string());
-		    sink.append(source);
-
-		    let playlist_pos = Arc::new(AtomicU32::new(0));
-		    let playlist_pos_clone = playlist_pos.clone();
-		    sink.append(rodio::source::EmptyCallback::<i16>::new(Box::new(move || {
-        		println!("empty callback is now running");
-        		playlist_pos_clone.fetch_add(1, Ordering::Relaxed);
-		    })));
-		    println!("playlist_pos: {}", playlist_pos.load(Ordering::Relaxed));
-                } else {
-                    sink.play();
-                }
-            },
-
-	    "skip" => {
-			sink.skip_one();
-	    },
-
-		"exit" => {
-			break;
-		},
-
-            _ => todo!(),
+        	_ => todo!(),
         }
     }
 }
