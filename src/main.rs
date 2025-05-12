@@ -1,28 +1,54 @@
 #![feature(str_split_remainder)]
 
-use std::io;
-use std::io::BufReader;
+use std::io::{self, BufReader};
 use std::fs::File;
 use std::collections::HashMap;
 use rodio::{Decoder, OutputStream, Sink};
 use id3::{Tag, Content};
+use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
+use symphonia::default::get_probe;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
 struct Player {
     m_song_infos: HashMap<String, String>,
+}
+
+fn get_audio_duration(path: &str) -> (u32, u32) {
+    let file = File::open(path).unwrap();
+    let mss = MediaSourceStream::new(Box::new(file) as Box<dyn MediaSource>, Default::default());
+
+    let probe = get_probe().format(
+        &Default::default(),
+        mss,
+        &FormatOptions::default(),
+        &MetadataOptions::default(),
+    ).unwrap();
+
+    let format = probe.format;
+    let track = format.default_track().unwrap();
+    let sample_rate = track.codec_params.sample_rate.unwrap();
+    let duration_in_frames = track.codec_params.n_frames.unwrap();
+
+    let duration_seconds = duration_in_frames as f64 / sample_rate as f64;
+    let minutes = (duration_seconds / 60.0).floor() as u32;
+    let seconds = (duration_seconds % 60.0).round() as u32;
+
+    (minutes, seconds)
 }
 
 fn d_playing_infos(sink: &Sink, player: &Player) {
     if sink.empty() {
         println!("No song is currently playing.");
     } else {
-	if !player.m_song_infos.is_empty() {
-	    for (key, value) in &player.m_song_infos {
-	   	println!("{}: {}", key, value);
-	    }
-	}
-	println!("Position of song: {}s", sink.get_pos().as_secs());
-	println!("Volume: {}", sink.volume());
-	println!("Nombre de musiques en attente: {}", sink.len());
+		if !player.m_song_infos.is_empty() {
+	    	for (key, value) in &player.m_song_infos {
+	   			println!("{}: {}", key, value);
+	    	}
+		}
+		println!("Position of song: {}s", sink.get_pos().as_secs());
+		println!("Volume: {}", sink.volume());
+		println!("Number of songs in queue: {}", sink.len() / 2);
     }
 }
 
@@ -42,9 +68,12 @@ fn main() {
 	let first_parameter = args.next().unwrap();
 	
         match first_parameter {
+	    "infos" => {
+		d_playing_infos(&sink, &player);
+	    },
+
             "pause" => {
                 sink.pause();
-                d_playing_infos(&sink, &player);
             },
 
             "play" => {
@@ -81,18 +110,31 @@ fn main() {
 			}
 		    }
 
-                    let buffer = BufReader::new(file);
-		    sink.append(Decoder::new_mp3(buffer).unwrap());
-		    d_playing_infos(&sink, &player);
+        	let buffer = BufReader::new(file);
+		    let source = Decoder::new_mp3(buffer).unwrap();
+		    let (minutes, seconds) = get_audio_duration(song_name);
+		    player.m_song_infos.insert(String::from("duration"), minutes.to_string() + ":" + &seconds.to_string());
+		    sink.append(source);
+
+		    let playlist_pos = Arc::new(AtomicU32::new(0));
+		    let playlist_pos_clone = playlist_pos.clone();
+		    sink.append(rodio::source::EmptyCallback::<i16>::new(Box::new(move || {
+        		println!("empty callback is now running");
+        		playlist_pos_clone.fetch_add(1, Ordering::Relaxed);
+		    })));
+		    println!("playlist_pos: {}", playlist_pos.load(Ordering::Relaxed));
                 } else {
                     sink.play();
-		    d_playing_infos(&sink, &player);
                 }
             },
 
-            "exit" => {
-                break;
-            },
+	    "skip" => {
+			sink.skip_one();
+	    },
+
+		"exit" => {
+			break;
+		},
 
             _ => todo!(),
         }
