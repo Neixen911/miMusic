@@ -3,15 +3,68 @@
 use std::io::{self, BufReader};
 use std::fs::File;
 use std::collections::HashMap;
-use rodio::{Decoder, OutputStream, Sink};
+use rodio::{Decoder, OutputStream, Sink, source::EmptyCallback};
 use id3::{Tag, Content};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
+#[derive(Clone)]
 struct Player {
-    m_song_infos: HashMap<String, String>,
+    m_song_infos: Vec<HashMap<String, String>>,
+	end_of_song_signal: Arc<AtomicU32>,
+}
+
+fn add_signal_end_song(sink: &Sink) {
+	let end_of_song_signal = Arc::new(AtomicU32::new(0));
+	let end_of_song_signal_clone = end_of_song_signal.clone();
+	sink.append(EmptyCallback::<i16>::new(Box::new(move || {
+		end_of_song_signal_clone.fetch_add(1, Ordering::Relaxed);
+	})));
+}
+
+fn add_song_to_queue(sink: &Sink, path: &str) {
+	let file = File::open(path).unwrap();
+	let buffer = BufReader::new(file);
+	let source = Decoder::new_mp3(buffer).unwrap();
+	sink.append(source);
+	add_signal_end_song(sink);
+}
+
+fn get_song_infos(path: &str) -> HashMap<String, String> {
+	let file = File::open(path).unwrap();
+	let tag = Tag::read_from2(&file).unwrap();
+	let mut song_infos = HashMap::new();
+	
+	for frame in tag.frames() {
+		let id = frame.id();
+	
+		match frame.content() {
+			Content::Text(value) => {
+				match id {
+					"TIT2" => {
+						song_infos.insert(String::from("title"), value.to_string());
+					}
+					"TPE1" => {
+						song_infos.insert(String::from("artist"), value.to_string());
+					}
+
+					_default => {
+						continue;
+					}
+				}
+			}
+			_content => {
+				continue;
+			}
+		}
+	}
+
+	let (minutes, seconds) = get_audio_duration(path);
+	song_infos.insert(String::from("duration"), minutes.to_string() + ":" + &seconds.to_string());
+
+	song_infos
 }
 
 fn get_audio_duration(path: &str) -> (u32, u32) {
@@ -42,10 +95,15 @@ fn d_playing_infos(sink: &Sink, player: &Player) {
         println!("No song is currently playing.");
     } else {
 		if !player.m_song_infos.is_empty() {
-	    	for (key, value) in &player.m_song_infos {
+	    	for (key, value) in player.m_song_infos.get(0).unwrap() {
 	   			println!("{}: {}", key, value);
 	    	}
 		}
+		let mut next_song = false;
+		if player.end_of_song_signal.load(Ordering::Relaxed) > 0 {
+			next_song = true;
+		}
+		println!("Next song: {}", next_song);
 		println!("Position of song: {}s", sink.get_pos().as_secs());
 		println!("Volume: {}", sink.volume());
 		println!("Number of songs in queue: {}", sink.len() / 2);
@@ -53,7 +111,7 @@ fn d_playing_infos(sink: &Sink, player: &Player) {
 }
 
 fn main() {
-    let mut player = Player { m_song_infos: HashMap::new() };
+    let mut player = Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
     let (_stream, handle) = OutputStream::try_default().unwrap();
     let sink = Sink::try_new(&handle).unwrap();
 
@@ -79,46 +137,9 @@ fn main() {
             "play" => {
                 if !sink.is_paused() && args.remainder().is_some() {
 					let song_name = args.next().unwrap();
-					let file = File::open(song_name).unwrap();
-					let tag = Tag::read_from2(&file).unwrap();
-				
-					for frame in tag.frames() {
-						let id = frame.id();
-					
-						match frame.content() {
-							Content::Text(value) => {
-								match id {
-									"TIT2" => {
-										player.m_song_infos.insert(String::from("title"), value.to_string());
-									}
-									"TPE1" => {
-										player.m_song_infos.insert(String::from("artist"), value.to_string());
-									}
 
-									_default => {
-										continue;
-									}
-								}
-							}
-							_content => {
-								continue;
-							}
-						}
-					}
-
-					let buffer = BufReader::new(file);
-					let source = Decoder::new_mp3(buffer).unwrap();
-					let (minutes, seconds) = get_audio_duration(song_name);
-					player.m_song_infos.insert(String::from("duration"), minutes.to_string() + ":" + &seconds.to_string());
-					sink.append(source);
-
-					let playlist_pos = Arc::new(AtomicU32::new(0));
-					let playlist_pos_clone = playlist_pos.clone();
-					sink.append(rodio::source::EmptyCallback::<i16>::new(Box::new(move || {
-						println!("empty callback is now running");
-						playlist_pos_clone.fetch_add(1, Ordering::Relaxed);
-					})));
-					println!("playlist_pos: {}", playlist_pos.load(Ordering::Relaxed));
+					player.m_song_infos.push(get_song_infos(&song_name));
+					add_song_to_queue(&sink, &song_name);
 				} else {
 					sink.play();
 				}
@@ -126,6 +147,7 @@ fn main() {
 
 			"skip" => {
 				sink.skip_one();
+				player.m_song_infos.remove(0);
 			},
 
 			"exit" => {
