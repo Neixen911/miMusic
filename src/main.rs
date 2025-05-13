@@ -10,29 +10,27 @@ use symphonia::default::get_probe;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-#[derive(Clone)]
 struct Player {
     m_song_infos: Vec<HashMap<String, String>>,
 	end_of_song_signal: Arc<AtomicU32>,
 }
 
-fn add_signal_end_song(sink: &Sink) {
-	let end_of_song_signal = Arc::new(AtomicU32::new(0));
-	let end_of_song_signal_clone = end_of_song_signal.clone();
+fn add_signal_end_song(sink: &Sink, player: &mut Player) {
+	let end_of_song_signal = player.end_of_song_signal.clone();
 	sink.append(EmptyCallback::<i16>::new(Box::new(move || {
-		end_of_song_signal_clone.fetch_add(1, Ordering::Relaxed);
+		end_of_song_signal.store(1, Ordering::Relaxed);
 	})));
 }
 
-fn add_song_to_queue(sink: &Sink, path: &str) {
+fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 	let file = File::open(path).unwrap();
 	let buffer = BufReader::new(file);
 	let source = Decoder::new_mp3(buffer).unwrap();
 	sink.append(source);
-	add_signal_end_song(sink);
+	add_signal_end_song(sink, player);
 }
 
-fn get_song_infos(path: &str) -> HashMap<String, String> {
+fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 	let file = File::open(path).unwrap();
 	let tag = Tag::read_from2(&file).unwrap();
 	let mut song_infos = HashMap::new();
@@ -90,7 +88,11 @@ fn get_audio_duration(path: &str) -> (u32, u32) {
     (minutes, seconds)
 }
 
-fn d_playing_infos(sink: &Sink, player: &Player) {
+fn d_playing_infos(sink: &Sink, player: &mut Player) {
+	if player.end_of_song_signal.load(Ordering::Relaxed) > 0 {
+		player.m_song_infos.remove(0);
+		player.end_of_song_signal.store(0, Ordering::Relaxed);
+	}
     if sink.empty() {
         println!("No song is currently playing.");
     } else {
@@ -99,11 +101,6 @@ fn d_playing_infos(sink: &Sink, player: &Player) {
 	   			println!("{}: {}", key, value);
 	    	}
 		}
-		let mut next_song = false;
-		if player.end_of_song_signal.load(Ordering::Relaxed) > 0 {
-			next_song = true;
-		}
-		println!("Next song: {}", next_song);
 		println!("Position of song: {}s", sink.get_pos().as_secs());
 		println!("Volume: {}", sink.volume());
 		println!("Number of songs in queue: {}", sink.len() / 2);
@@ -127,7 +124,7 @@ fn main() {
 	
         match first_parameter {
 	    	"infos" => {
-				d_playing_infos(&sink, &player);
+				d_playing_infos(&sink, &mut player);
 	    	},
 
             "pause" => {
@@ -138,8 +135,8 @@ fn main() {
                 if !sink.is_paused() && args.remainder().is_some() {
 					let song_name = args.next().unwrap();
 
-					player.m_song_infos.push(get_song_infos(&song_name));
-					add_song_to_queue(&sink, &song_name);
+					player.m_song_infos.push(get_song_infos_from_file(&song_name));
+					add_song_to_queue(&sink, &song_name, &mut player);
 				} else {
 					sink.play();
 				}
@@ -147,7 +144,7 @@ fn main() {
 
 			"skip" => {
 				sink.skip_one();
-				player.m_song_infos.remove(0);
+				player.end_of_song_signal.store(1, Ordering::Relaxed);
 			},
 
 			"exit" => {
