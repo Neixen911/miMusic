@@ -16,16 +16,12 @@ pub struct Player {
 	pub end_of_song_signal: Arc<AtomicU32>,
 }
 
-pub fn get_all_songs() -> Vec<HashMap<String, String>> {
-	let mut songs = Vec::new();
+pub fn get_all_songs() {
 	let songs_path = fs::read_dir("songs").unwrap();
 
 	for song_path in songs_path {
-		let song_infos = get_song_infos_from_file(song_path.unwrap().path().to_str().unwrap());
-		songs.push(song_infos);
+		println!("{}", song_path.unwrap().path().display());
 	}
-
-	songs
 }
 
 pub fn add_signal_end_song(sink: &Sink, player: &mut Player) {
@@ -137,6 +133,7 @@ fn main() {
 	
         match first_parameter {
 	    	"infos" => {
+                get_all_songs();
 				d_playing_infos(&sink, &mut player);
 	    	},
 

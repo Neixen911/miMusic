@@ -1,13 +1,20 @@
+#![feature(str_split_remainder)]
+
 use std::io;
+use std::collections::HashMap;
+use std::sync::atomic::AtomicU32;
+use std::sync::Arc;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Layout},
     prelude::{Alignment},
     style::{Style},
     text::{Line, Text},
-    widgets::{Block, Paragraph},
+    widgets::{Block, Cell, ListItem, Paragraph, Row, Table},
     DefaultTerminal, Frame,
 };
+
+mod music;
 
 fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
@@ -18,6 +25,7 @@ fn main() -> io::Result<()> {
 
 #[derive(Debug, Default)]
 pub struct App {
+    player: music::Player,
     is_running: bool,
 }
 
@@ -25,6 +33,7 @@ impl App {
     /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
+        self.player = music::Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
         while self.is_running {
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_events()?;
@@ -56,8 +65,8 @@ impl App {
         let vertical = Layout::vertical([
             Constraint::Min(1),
             Constraint::Min(1),
-            Constraint::Fill(0),
-            Constraint::Min(1),
+            Constraint::Fill(100),
+            Constraint::Min(2),
         ]);
         let [app, playing, songs, hotkeys] = vertical.areas(frame.area());
 
@@ -67,10 +76,29 @@ impl App {
         frame.render_widget(app_text, app);
 
         // Playing section
-        todo!();
+        // todo!();
 
         // Songs section
-        todo!();
+        let all_songs = music::get_all_songs();
+        let mut songs_datas: Vec<Row> = Vec::new();
+
+        for song in all_songs {
+            songs_datas.push(Row::new(vec![
+                song.get("title").unwrap().to_string(),
+                song.get("artist").unwrap().to_string(),
+                song.get("duration").unwrap().to_string(),
+            ]));
+        }
+        let header = Row::new(vec!["Song", "Artist", "Duration"]);
+        let songs_table = Table::new(
+            songs_datas,
+            [
+                Constraint::Length(65 + 1),
+                Constraint::Length(30 + 1),
+                Constraint::Length(8),
+            ])
+            .header(header);
+        frame.render_widget(songs_table, songs);
 
         // Hotkeys section
         let hotkeys_text = Block::default()
