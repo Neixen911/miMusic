@@ -16,12 +16,16 @@ pub struct Player {
 	pub end_of_song_signal: Arc<AtomicU32>,
 }
 
-pub fn get_all_songs() {
+pub fn get_all_songs() -> Vec<HashMap<String, String>> {
+	let mut songs = Vec::new();
 	let songs_path = fs::read_dir("songs").unwrap();
 
 	for song_path in songs_path {
-		println!("{}", song_path.unwrap().path().display());
+		let song_infos = get_song_infos_from_file(song_path.unwrap().path().to_str().unwrap());
+		songs.push(song_infos);
 	}
+
+	songs
 }
 
 pub fn add_signal_end_song(sink: &Sink, player: &mut Player) {
@@ -97,6 +101,24 @@ pub fn get_audio_duration(path: &str) -> (u32, u32) {
     (minutes, seconds)
 }
 
+pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
+	let mut song_infos = Vec::new();
+	if sink.empty() {
+		song_infos.push("No song is currently playing.".to_string());
+		song_infos.push("--".to_string());
+		song_infos.push("-:--".to_string());
+	} else {
+		if !player.m_song_infos.is_empty() {
+			let actual_song = player.m_song_infos.get(0).unwrap();
+			song_infos.push(actual_song.get("title").unwrap().to_string());
+			song_infos.push(actual_song.get("artist").unwrap().to_string());
+			song_infos.push(actual_song.get("duration").unwrap().to_string());
+		}
+	}
+
+	song_infos
+}
+
 pub fn d_playing_infos(sink: &Sink, player: &mut Player) {
 	if player.end_of_song_signal.load(Ordering::Relaxed) > 0 {
 		player.m_song_infos.remove(0);
@@ -133,7 +155,6 @@ fn main() {
 	
         match first_parameter {
 	    	"infos" => {
-                get_all_songs();
 				d_playing_infos(&sink, &mut player);
 	    	},
 

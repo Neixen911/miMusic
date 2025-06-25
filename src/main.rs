@@ -4,6 +4,7 @@ use std::io;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
+use rodio::{OutputStream, Sink};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Layout},
@@ -32,10 +33,14 @@ pub struct App {
 impl App {
     /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        // Initialisation
         self.is_running = true;
         self.player = music::Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
+        let (_stream, handle) = OutputStream::try_default().unwrap();
+        let sink = Sink::try_new(&handle).unwrap();
+
         while self.is_running {
-            terminal.draw(|frame| self.draw(frame))?;
+            terminal.draw(|frame| self.draw(frame, &sink))?;
             self.handle_events()?;
         }
         Ok(())
@@ -61,11 +66,11 @@ impl App {
         }
     }
 
-    fn draw(&self, frame: &mut Frame) {
+    fn draw(&mut self, frame: &mut Frame, sink: &Sink) {
         let vertical = Layout::vertical([
             Constraint::Min(1),
-            Constraint::Min(1),
-            Constraint::Fill(100),
+            Constraint::Length(5),
+            Constraint::Fill(1),
             Constraint::Min(2),
         ]);
         let [app, playing, songs, hotkeys] = vertical.areas(frame.area());
@@ -76,7 +81,19 @@ impl App {
         frame.render_widget(app_text, app);
 
         // Playing section
-        // todo!();
+        let playing_info = music::get_current_song_info(sink, &mut self.player);
+        let mut playing_lines: Vec<Line> = Vec::new();
+        playing_lines.push(Line::from(playing_info.get(0).unwrap().to_string()));
+        playing_lines.push(Line::from(playing_info.get(1).unwrap().to_string()));
+        playing_lines.push(Line::from(playing_info.get(2).unwrap().to_string()));
+        let playing_section = Paragraph::new(playing_lines)
+            .block(
+                Block::default()
+                .title(Line::from("Now Playing"))
+                .borders(ratatui::widgets::Borders::ALL
+            )
+        );        
+        frame.render_widget(playing_section, playing);
 
         // Songs section
         let all_songs = music::get_all_songs();
@@ -89,13 +106,13 @@ impl App {
                 song.get("duration").unwrap().to_string(),
             ]));
         }
-        let header = Row::new(vec!["Song", "Artist", "Duration"]);
+        let header = Row::new(vec!["Title", "Artist", "Duration"]);
         let songs_table = Table::new(
             songs_datas,
             [
-                Constraint::Length(65 + 1),
-                Constraint::Length(30 + 1),
-                Constraint::Length(8),
+                Constraint::Length(80),
+                Constraint::Length(30),
+                Constraint::Length(10),
             ])
             .header(header);
         frame.render_widget(songs_table, songs);

@@ -101,6 +101,24 @@ pub fn get_audio_duration(path: &str) -> (u32, u32) {
     (minutes, seconds)
 }
 
+pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
+	let mut song_infos = Vec::new();
+	if sink.empty() {
+		song_infos.push("No song is currently playing.".to_string());
+		song_infos.push("--".to_string());
+		song_infos.push("-:--".to_string());
+	} else {
+		if !player.m_song_infos.is_empty() {
+			let actual_song = player.m_song_infos.get(0).unwrap();
+			song_infos.push(actual_song.get("title").unwrap().to_string());
+			song_infos.push(actual_song.get("artist").unwrap().to_string());
+			song_infos.push(actual_song.get("duration").unwrap().to_string());
+		}
+	}
+
+	song_infos
+}
+
 pub fn d_playing_infos(sink: &Sink, player: &mut Player) {
 	if player.end_of_song_signal.load(Ordering::Relaxed) > 0 {
 		player.m_song_infos.remove(0);
