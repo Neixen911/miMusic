@@ -47,6 +47,7 @@ pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 	let file = File::open(path).unwrap();
 	let tag = Tag::read_from2(&file).unwrap();
 	let mut song_infos = HashMap::new();
+	song_infos.insert(String::from("path"), path.to_string());
 	
 	for frame in tag.frames() {
 		let id = frame.id();
@@ -102,17 +103,25 @@ pub fn get_audio_duration(path: &str) -> (u32, u32) {
 }
 
 pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
+	if player.end_of_song_signal.load(Ordering::Relaxed) > 0 {
+		player.m_song_infos.remove(0);
+		player.end_of_song_signal.store(0, Ordering::Relaxed);
+	}
+
 	let mut song_infos = Vec::new();
 	if sink.empty() {
 		song_infos.push("No song is currently playing.".to_string());
 		song_infos.push("--".to_string());
-		song_infos.push("-:--".to_string());
+		song_infos.push("--:--".to_string());
 	} else {
 		if !player.m_song_infos.is_empty() {
 			let actual_song = player.m_song_infos.get(0).unwrap();
 			song_infos.push(actual_song.get("title").unwrap().to_string());
 			song_infos.push(actual_song.get("artist").unwrap().to_string());
-			song_infos.push(actual_song.get("duration").unwrap().to_string());
+			let minutes = format!("{:02}", (sink.get_pos().as_secs() as f64 / 60.0).floor() as u32);
+    		let seconds = format!("{:02}", (sink.get_pos().as_secs() as f64 % 60.0).round() as u32);
+			let actual_time = minutes.to_string() + ":" + &seconds.to_string();
+			song_infos.push(actual_time + " / " + actual_song.get("duration").unwrap());
 		}
 	}
 
