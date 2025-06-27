@@ -85,7 +85,7 @@ impl App {
             KeyCode::Up => self.previous_song(),
             KeyCode::Down => self.next_song(),
             KeyCode::Right => self.skip_song(sink),
-            KeyCode::Backspace => self.pause_play_song(sink),
+            KeyCode::Char(' ') => self.pause_play_song(sink),
             _ => {}
         }
     }
@@ -194,7 +194,7 @@ impl App {
 
         // Hotkeys section
         let hotkeys_text = Block::default()
-            .title(Line::from("Move up <↑> - Move down <↓> - Play <Enter> - Skip <→> - Quit <Q>").centered());
+            .title(Line::from("Move up <↑> - Move down <↓> - Play <Enter> - Play/Pause <Space> - Skip <→> - Quit <Q>").centered());
         frame.render_widget(hotkeys_text, hotkeys);
     }
 
