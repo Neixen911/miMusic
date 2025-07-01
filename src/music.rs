@@ -14,6 +14,7 @@ pub struct Player {
 	pub end_of_song_signal: Arc<AtomicU32>,
 }
 
+// Return all the songs with their tags
 pub fn get_all_songs() -> Vec<HashMap<String, String>> {
 	let mut songs = Vec::new();
 	let songs_path = fs::read_dir("songs").unwrap();
@@ -26,6 +27,7 @@ pub fn get_all_songs() -> Vec<HashMap<String, String>> {
 	songs
 }
 
+// Add signal to know when a song is ended
 fn add_signal_end_song(sink: &Sink, player: &mut Player) {
 	let end_of_song_signal = player.end_of_song_signal.clone();
 	sink.append(EmptyCallback::<i16>::new(Box::new(move || {
@@ -33,6 +35,7 @@ fn add_signal_end_song(sink: &Sink, player: &mut Player) {
 	})));
 }
 
+// Add a song to the queue
 pub fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 	let file = File::open(path).unwrap();
 	let buffer = BufReader::new(file);
@@ -41,6 +44,7 @@ pub fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 	add_signal_end_song(sink, player);
 }
 
+// Return infos from song file
 pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 	let file = File::open(path).unwrap();
 	let tag = Tag::read_from2(&file).unwrap();
@@ -77,6 +81,7 @@ pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 	song_infos
 }
 
+// Return total duration of a song from a path (calcul from his frames and rate)
 fn get_audio_duration(path: &str) -> u32 {
     let file = File::open(path).unwrap();
     let mss = MediaSourceStream::new(Box::new(file) as Box<dyn MediaSource>, Default::default());
@@ -98,6 +103,7 @@ fn get_audio_duration(path: &str) -> u32 {
 	duration_seconds as u32
 }
 
+// Return infos from the current playing song
 pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
 	if player.end_of_song_signal.load(Ordering::Relaxed) > 0 {
 		player.m_song_infos.remove(0);

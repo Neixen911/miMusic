@@ -73,8 +73,6 @@ fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 		}
 	}
 
-	// let (minutes, seconds) = get_audio_duration(path);
-	// song_infos.insert(String::from("duration"), minutes.to_string() + ":" + &seconds.to_string());
 	let seconds = get_audio_duration(path);
 	song_infos.insert(String::from("duration"), seconds.to_string());
 
@@ -162,8 +160,8 @@ fn main() {
 				}
 			},
 
-			"all" => {
-				get_all_songs();
+			"list" => {
+				println!("{:?}", get_all_songs());
 			}
 
 			"skip" => {
