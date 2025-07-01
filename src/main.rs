@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Constraint, Layout},
     style::{Style},
     text::{Line, Text},
-    widgets::{Block, Paragraph, Row, Table, TableState},
+    widgets::{Block, Gauge, Paragraph, Row, Table, TableState},
     DefaultTerminal, Frame,
 };
 
@@ -158,25 +158,56 @@ impl App {
         frame.render_widget(app_text, app);
 
         // Playing section
+        let chunks = Layout::vertical([
+            Constraint::Length(4),
+            Constraint::Length(1),
+        ])
+        .margin(1)
+        .split(playing);
+
+        let playing_section = Block::default()
+            .title(Line::from("Now Playing"))
+            .borders(ratatui::widgets::Borders::ALL);
+        frame.render_widget(playing_section, playing);
+
         let mut playing_lines: Vec<Line> = Vec::new();
         playing_lines.push(Line::from(self.playing_infos.get(0).unwrap().to_string()));
         playing_lines.push(Line::from(self.playing_infos.get(1).unwrap().to_string()));
-        playing_lines.push(Line::from(self.playing_infos.get(2).unwrap().to_string()));
-        let playing_section = Paragraph::new(playing_lines)
-            .block(
-                Block::default()
-                .title(Line::from("Now Playing"))
-                .borders(ratatui::widgets::Borders::ALL)
-            );
-        frame.render_widget(playing_section, playing);
+        let infos_section = Paragraph::new(playing_lines);
+        frame.render_widget(infos_section, chunks[0]);
+
+        let act_duration_song = self.playing_infos.get(2).unwrap().to_string().parse::<f64>().unwrap();
+        let max_duration_song = self.playing_infos.get(3).unwrap().to_string().parse::<f64>().unwrap();
+        let mut ratio = 0.0;
+        let (act_minutes, act_seconds) = music::seconds_to_minsec(act_duration_song);
+        let (max_minutes, max_seconds) = music::seconds_to_minsec(max_duration_song);
+        let mut label = format!("{:02}", act_minutes) 
+            + ":" 
+            + format!("{:02}", act_seconds).as_str() 
+            + " / " 
+            + format!("{:02}", max_minutes).as_str() 
+            + ":" 
+            + format!("{:02}", max_seconds).as_str();
+        if max_duration_song != 0.0 {
+            ratio = act_duration_song / max_duration_song;
+        }
+        let gauge_section = Gauge::default()
+            .ratio(ratio)
+            .label(label);
+        frame.render_widget(gauge_section, chunks[1]);
 
         // Songs section
         let mut songs_datas: Vec<Row> = Vec::new();
         for song in &self.all_songs {
+            let duration_song = song.get("duration").unwrap().to_string().parse::<f64>().unwrap();
+            let (min, sec) = music::seconds_to_minsec(duration_song);
+            let duration = format!("{:02}", min) 
+                + ":" 
+                + format!("{:02}", sec).as_str();
             songs_datas.push(Row::new(vec![
                 song.get("title").unwrap().to_string(),
                 song.get("artist").unwrap().to_string(),
-                song.get("duration").unwrap().to_string(),
+                duration,
             ]));
         }
         let header = Row::new(vec!["Title", "Artist", "Duration"]);
@@ -194,7 +225,7 @@ impl App {
 
         // Hotkeys section
         let hotkeys_text = Block::default()
-            .title(Line::from("Move up <↑> - Move down <↓> - Play <Enter> - Play/Pause <Space> - Skip <→> - Quit <Q>").centered());
+            .title(Line::from("Move up <Up> - Move down <Down> - Play <Enter> - Play/Pause <Space> - Skip <Right> - Quit <Q>").centered());
         frame.render_widget(hotkeys_text, hotkeys);
     }
 

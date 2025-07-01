@@ -16,6 +16,13 @@ pub struct Player {
 	pub end_of_song_signal: Arc<AtomicU32>,
 }
 
+pub fn seconds_to_minsec(seconds: f64) -> (u32, u32) {
+	let min = (seconds / 60.0).floor() as u32;
+	let sec = (seconds % 60.0).round() as u32;
+
+	(min, sec)
+}
+
 pub fn get_all_songs() -> Vec<HashMap<String, String>> {
 	let mut songs = Vec::new();
 	let songs_path = fs::read_dir("songs").unwrap();
@@ -73,13 +80,15 @@ pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 		}
 	}
 
-	let (minutes, seconds) = get_audio_duration(path);
-	song_infos.insert(String::from("duration"), minutes.to_string() + ":" + &seconds.to_string());
+	// let (minutes, seconds) = get_audio_duration(path);
+	// song_infos.insert(String::from("duration"), minutes.to_string() + ":" + &seconds.to_string());
+	let seconds = get_audio_duration(path);
+	song_infos.insert(String::from("duration"), seconds.to_string());
 
 	song_infos
 }
 
-pub fn get_audio_duration(path: &str) -> (u32, u32) {
+pub fn get_audio_duration(path: &str) -> u32 {
     let file = File::open(path).unwrap();
     let mss = MediaSourceStream::new(Box::new(file) as Box<dyn MediaSource>, Default::default());
 
@@ -99,7 +108,8 @@ pub fn get_audio_duration(path: &str) -> (u32, u32) {
     let minutes = (duration_seconds / 60.0).floor() as u32;
     let seconds = (duration_seconds % 60.0).round() as u32;
 
-    (minutes, seconds)
+    // (minutes, seconds)
+	duration_seconds as u32
 }
 
 pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
@@ -112,16 +122,15 @@ pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
 	if sink.empty() {
 		song_infos.push("No song is currently playing.".to_string());
 		song_infos.push("--".to_string());
-		song_infos.push("--:--".to_string());
+		song_infos.push("0".to_string());
+		song_infos.push("0".to_string());
 	} else {
 		if !player.m_song_infos.is_empty() {
 			let actual_song = player.m_song_infos.get(0).unwrap();
 			song_infos.push(actual_song.get("title").unwrap().to_string());
 			song_infos.push(actual_song.get("artist").unwrap().to_string());
-			let minutes = format!("{:02}", (sink.get_pos().as_secs() as f64 / 60.0).floor() as u32);
-    		let seconds = format!("{:02}", (sink.get_pos().as_secs() as f64 % 60.0).round() as u32);
-			let actual_time = minutes.to_string() + ":" + &seconds.to_string();
-			song_infos.push(actual_time + " / " + actual_song.get("duration").unwrap());
+			song_infos.push(sink.get_pos().as_secs().to_string());
+			song_infos.push(actual_song.get("duration").unwrap().to_string());
 		}
 	}
 
