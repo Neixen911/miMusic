@@ -11,12 +11,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 #[derive(Default, Debug)]
-pub struct Player {
-    pub m_song_infos: Vec<HashMap<String, String>>,
-	pub end_of_song_signal: Arc<AtomicU32>,
+struct Player {
+    m_song_infos: Vec<HashMap<String, String>>,
+	end_of_song_signal: Arc<AtomicU32>,
 }
 
-pub fn get_all_songs() -> Vec<HashMap<String, String>> {
+fn get_all_songs() -> Vec<HashMap<String, String>> {
 	let mut songs = Vec::new();
 	let songs_path = fs::read_dir("songs").unwrap();
 
@@ -28,14 +28,14 @@ pub fn get_all_songs() -> Vec<HashMap<String, String>> {
 	songs
 }
 
-pub fn add_signal_end_song(sink: &Sink, player: &mut Player) {
+fn add_signal_end_song(sink: &Sink, player: &mut Player) {
 	let end_of_song_signal = player.end_of_song_signal.clone();
 	sink.append(EmptyCallback::<i16>::new(Box::new(move || {
 		end_of_song_signal.store(1, Ordering::Relaxed);
 	})));
 }
 
-pub fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
+fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 	let file = File::open(path).unwrap();
 	let buffer = BufReader::new(file);
 	let source = Decoder::new_mp3(buffer).unwrap();
@@ -43,7 +43,7 @@ pub fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 	add_signal_end_song(sink, player);
 }
 
-pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
+fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 	let file = File::open(path).unwrap();
 	let tag = Tag::read_from2(&file).unwrap();
 	let mut song_infos = HashMap::new();
@@ -73,13 +73,15 @@ pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 		}
 	}
 
-	let (minutes, seconds) = get_audio_duration(path);
-	song_infos.insert(String::from("duration"), minutes.to_string() + ":" + &seconds.to_string());
+	// let (minutes, seconds) = get_audio_duration(path);
+	// song_infos.insert(String::from("duration"), minutes.to_string() + ":" + &seconds.to_string());
+	let seconds = get_audio_duration(path);
+	song_infos.insert(String::from("duration"), seconds.to_string());
 
 	song_infos
 }
 
-pub fn get_audio_duration(path: &str) -> (u32, u32) {
+fn get_audio_duration(path: &str) -> u32 {
     let file = File::open(path).unwrap();
     let mss = MediaSourceStream::new(Box::new(file) as Box<dyn MediaSource>, Default::default());
 
@@ -96,13 +98,11 @@ pub fn get_audio_duration(path: &str) -> (u32, u32) {
     let duration_in_frames = track.codec_params.n_frames.unwrap();
 
     let duration_seconds = duration_in_frames as f64 / sample_rate as f64;
-    let minutes = (duration_seconds / 60.0).floor() as u32;
-    let seconds = (duration_seconds % 60.0).round() as u32;
-
-    (minutes, seconds)
+	
+	duration_seconds as u32
 }
 
-pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
+fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
 	if player.end_of_song_signal.load(Ordering::Relaxed) > 0 {
 		player.m_song_infos.remove(0);
 		player.end_of_song_signal.store(0, Ordering::Relaxed);
@@ -112,39 +112,19 @@ pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
 	if sink.empty() {
 		song_infos.push("No song is currently playing.".to_string());
 		song_infos.push("--".to_string());
-		song_infos.push("--:--".to_string());
+		song_infos.push("0".to_string());
+		song_infos.push("0".to_string());
 	} else {
 		if !player.m_song_infos.is_empty() {
 			let actual_song = player.m_song_infos.get(0).unwrap();
 			song_infos.push(actual_song.get("title").unwrap().to_string());
 			song_infos.push(actual_song.get("artist").unwrap().to_string());
-			let minutes = format!("{:02}", (sink.get_pos().as_secs() as f64 / 60.0).floor() as u32);
-    		let seconds = format!("{:02}", (sink.get_pos().as_secs() as f64 % 60.0).round() as u32);
-			let actual_time = minutes.to_string() + ":" + &seconds.to_string();
-			song_infos.push(actual_time + " / " + actual_song.get("duration").unwrap());
+			song_infos.push(sink.get_pos().as_secs().to_string());
+			song_infos.push(actual_song.get("duration").unwrap().to_string());
 		}
 	}
 
 	song_infos
-}
-
-pub fn d_playing_infos(sink: &Sink, player: &mut Player) {
-	if player.end_of_song_signal.load(Ordering::Relaxed) > 0 {
-		player.m_song_infos.remove(0);
-		player.end_of_song_signal.store(0, Ordering::Relaxed);
-	}
-    if sink.empty() {
-        println!("No song is currently playing.");
-    } else {
-		if !player.m_song_infos.is_empty() {
-	    	for (key, value) in player.m_song_infos.get(0).unwrap() {
-	   			println!("{}: {}", key, value);
-	    	}
-		}
-		println!("Position of song: {}s", sink.get_pos().as_secs());
-		println!("Volume: {}", sink.volume());
-		println!("Number of songs in queue: {}", sink.len() / 2);
-    }
 }
 
 fn main() {
@@ -164,7 +144,7 @@ fn main() {
 	
         match first_parameter {
 	    	"infos" => {
-				d_playing_infos(&sink, &mut player);
+				println!("{:?}", get_current_song_info(&sink, &mut player));
 	    	},
 
             "pause" => {
@@ -181,6 +161,10 @@ fn main() {
 					sink.play();
 				}
 			},
+
+			"all" => {
+				get_all_songs();
+			}
 
 			"skip" => {
 				sink.skip_one();

@@ -34,9 +34,8 @@ pub struct App {
 }
 
 impl App {
-    /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        // Initialisation
+        // Initialisation of App's variables
         self.is_running = true;
         self.state_table = TableState::default().with_selected(0);
         self.player = music::Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
@@ -48,11 +47,16 @@ impl App {
         self.on_tick(&sink);
 
         while self.is_running {
+            // Draw TUI
             terminal.draw(|frame| self.draw(frame))?;
+
+            // Detect keys events
             let timeout = tick_rate.saturating_sub(last_tick.elapsed());
             if event::poll(timeout)? {
                 self.handle_events(&sink)?;
             }
+
+            // Loop to updated data
             if last_tick.elapsed() >= tick_rate {
                 self.on_tick(&sink);
                 last_tick = Instant::now();
@@ -61,15 +65,14 @@ impl App {
         Ok(())
     }
 
+    // Function to retrieve data from playing section
     fn on_tick(&mut self, sink: &Sink) {
         self.playing_infos = music::get_current_song_info(sink, &mut self.player);
     }
 
-    /// updates the application's state_table based on user input
+    // Retrieve keys events
     fn handle_events(&mut self, sink: &Sink) -> io::Result<()> {
         match event::read()? {
-            // it's important to check that the event is a key press event as
-            // crossterm also emits key release and repeat events on Windows.
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 self.handle_key_event(key_event, sink)
             }
@@ -78,6 +81,7 @@ impl App {
         Ok(())
     }
 
+    // Match key event to dedicated function
     fn handle_key_event(&mut self, key_event: KeyEvent, sink: &Sink) {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
@@ -90,6 +94,7 @@ impl App {
         }
     }
 
+    // Add song to the queue on key pressed
     fn add_song_to_queue(&mut self, sink: &Sink) {
         let i = match self.state_table.selected() {
             Some(i) => {
@@ -99,10 +104,11 @@ impl App {
         };
         let path = self.all_songs[i].get("path");
         let path = path.as_deref().unwrap();
-        self.player.m_song_infos.push(music::get_song_infos_from_file(&path)); // A optimiser
+        self.player.m_song_infos.push(music::get_song_infos_from_file(&path)); // To optimise
         music::add_song_to_queue(sink, &path, &mut self.player);
     }
 
+    // Select previous song in table on key pressed
     fn previous_song(&mut self) {
         let i = match self.state_table.selected() {
             Some(i) => {
@@ -117,6 +123,7 @@ impl App {
         self.state_table.select(Some(i));
     }
 
+    // Select next song in table on key pressed
     fn next_song(&mut self) {
         let i = match self.state_table.selected() {
             Some(i) => {
@@ -131,18 +138,29 @@ impl App {
         self.state_table.select(Some(i));
     }
 
+    // Skip playing song on key pressed
     fn skip_song(&mut self, sink: &Sink) {
         if sink.len() > 0 {
             sink.skip_one();
         }
     }
 
+    // Play/Pause song on key pressed
     fn pause_play_song(&mut self, sink: &Sink) {
         if !sink.is_paused() {
             sink.pause();
         } else { sink.play(); }
     }
 
+    // Convert seconds to minutes/seconds
+    fn seconds_to_minsec(seconds: f64) -> (u32, u32) {
+        let min = (seconds / 60.0).floor() as u32;
+        let sec = (seconds % 60.0).round() as u32;
+
+        (min, sec)
+    }
+
+    // Draw TUI app
     fn draw(&mut self, frame: &mut Frame) {
         let vertical = Layout::vertical([
             Constraint::Length(1),
@@ -179,9 +197,9 @@ impl App {
         let act_duration_song = self.playing_infos.get(2).unwrap().to_string().parse::<f64>().unwrap();
         let max_duration_song = self.playing_infos.get(3).unwrap().to_string().parse::<f64>().unwrap();
         let mut ratio = 0.0;
-        let (act_minutes, act_seconds) = music::seconds_to_minsec(act_duration_song);
-        let (max_minutes, max_seconds) = music::seconds_to_minsec(max_duration_song);
-        let mut label = format!("{:02}", act_minutes) 
+        let (act_minutes, act_seconds) = Self::seconds_to_minsec(act_duration_song);
+        let (max_minutes, max_seconds) = Self::seconds_to_minsec(max_duration_song);
+        let label = format!("{:02}", act_minutes) 
             + ":" 
             + format!("{:02}", act_seconds).as_str() 
             + " / " 
@@ -200,7 +218,7 @@ impl App {
         let mut songs_datas: Vec<Row> = Vec::new();
         for song in &self.all_songs {
             let duration_song = song.get("duration").unwrap().to_string().parse::<f64>().unwrap();
-            let (min, sec) = music::seconds_to_minsec(duration_song);
+            let (min, sec) = Self::seconds_to_minsec(duration_song);
             let duration = format!("{:02}", min) 
                 + ":" 
                 + format!("{:02}", sec).as_str();
@@ -229,6 +247,7 @@ impl App {
         frame.render_widget(hotkeys_text, hotkeys);
     }
 
+    // Exit the app on key pressed
     fn exit(&mut self) {
         self.is_running = false;
     }

@@ -1,9 +1,7 @@
-#![feature(str_split_remainder)]
-
-use std::io::{self, BufReader};
+use std::io::BufReader;
 use std::fs::{self, File};
 use std::collections::HashMap;
-use rodio::{Decoder, OutputStream, Sink, source::EmptyCallback};
+use rodio::{Decoder, Sink, source::EmptyCallback};
 use id3::{Tag, Content};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
@@ -14,13 +12,6 @@ use std::sync::Arc;
 pub struct Player {
     pub m_song_infos: Vec<HashMap<String, String>>,
 	pub end_of_song_signal: Arc<AtomicU32>,
-}
-
-pub fn seconds_to_minsec(seconds: f64) -> (u32, u32) {
-	let min = (seconds / 60.0).floor() as u32;
-	let sec = (seconds % 60.0).round() as u32;
-
-	(min, sec)
 }
 
 pub fn get_all_songs() -> Vec<HashMap<String, String>> {
@@ -35,7 +26,7 @@ pub fn get_all_songs() -> Vec<HashMap<String, String>> {
 	songs
 }
 
-pub fn add_signal_end_song(sink: &Sink, player: &mut Player) {
+fn add_signal_end_song(sink: &Sink, player: &mut Player) {
 	let end_of_song_signal = player.end_of_song_signal.clone();
 	sink.append(EmptyCallback::<i16>::new(Box::new(move || {
 		end_of_song_signal.store(1, Ordering::Relaxed);
@@ -80,15 +71,13 @@ pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 		}
 	}
 
-	// let (minutes, seconds) = get_audio_duration(path);
-	// song_infos.insert(String::from("duration"), minutes.to_string() + ":" + &seconds.to_string());
 	let seconds = get_audio_duration(path);
 	song_infos.insert(String::from("duration"), seconds.to_string());
 
 	song_infos
 }
 
-pub fn get_audio_duration(path: &str) -> u32 {
+fn get_audio_duration(path: &str) -> u32 {
     let file = File::open(path).unwrap();
     let mss = MediaSourceStream::new(Box::new(file) as Box<dyn MediaSource>, Default::default());
 
@@ -105,10 +94,7 @@ pub fn get_audio_duration(path: &str) -> u32 {
     let duration_in_frames = track.codec_params.n_frames.unwrap();
 
     let duration_seconds = duration_in_frames as f64 / sample_rate as f64;
-    let minutes = (duration_seconds / 60.0).floor() as u32;
-    let seconds = (duration_seconds % 60.0).round() as u32;
 
-    // (minutes, seconds)
 	duration_seconds as u32
 }
 
@@ -135,72 +121,4 @@ pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
 	}
 
 	song_infos
-}
-
-pub fn d_playing_infos(sink: &Sink, player: &mut Player) {
-	if player.end_of_song_signal.load(Ordering::Relaxed) > 0 {
-		player.m_song_infos.remove(0);
-		player.end_of_song_signal.store(0, Ordering::Relaxed);
-	}
-    if sink.empty() {
-        println!("No song is currently playing.");
-    } else {
-		if !player.m_song_infos.is_empty() {
-	    	for (key, value) in player.m_song_infos.get(0).unwrap() {
-	   			println!("{}: {}", key, value);
-	    	}
-		}
-		println!("Position of song: {}s", sink.get_pos().as_secs());
-		println!("Volume: {}", sink.volume());
-		println!("Number of songs in queue: {}", sink.len() / 2);
-    }
-}
-
-fn main() {
-    let mut player = Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
-    let (_stream, handle) = OutputStream::try_default().unwrap();
-    let sink = Sink::try_new(&handle).unwrap();
-
-    loop {
-        println!("Enter a command !");
-        let mut input = String::new();
-        io::stdin()
-                .read_line(&mut input)
-                .unwrap();
-
-		let mut args = input.trim_end().split(" ");
-		let first_parameter = args.next().unwrap();
-	
-        match first_parameter {
-	    	"infos" => {
-				d_playing_infos(&sink, &mut player);
-	    	},
-
-            "pause" => {
-                sink.pause();
-            },
-
-            "play" => {
-                if !sink.is_paused() && args.remainder().is_some() {
-					let song_name = args.next().unwrap();
-
-					player.m_song_infos.push(get_song_infos_from_file(&song_name));
-					add_song_to_queue(&sink, &song_name, &mut player);
-				} else {
-					sink.play();
-				}
-			},
-
-			"skip" => {
-				sink.skip_one();
-				player.end_of_song_signal.store(1, Ordering::Relaxed);
-			},
-
-			"exit" => {
-				break;
-			},
-
-        	_ => todo!(),
-        }
-    }
 }
