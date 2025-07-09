@@ -49,6 +49,12 @@ pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 	let file = File::open(path).unwrap();
 	let tag = Tag::read_from2(&file).unwrap();
 	let mut song_infos = HashMap::new();
+	// Default datas
+	song_infos.insert(String::from("path"), "songs/song.mp3".to_string());
+	song_infos.insert(String::from("title"), "Unknown".to_string());
+	song_infos.insert(String::from("artist"), "Unknown".to_string());
+	song_infos.insert(String::from("duration"), "0".to_string());
+	
 	song_infos.insert(String::from("path"), path.to_string());
 	
 	for frame in tag.frames() {

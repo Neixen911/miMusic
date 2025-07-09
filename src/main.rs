@@ -217,11 +217,8 @@ impl App {
         // Songs section
         let mut songs_datas: Vec<Row> = Vec::new();
         for song in &self.all_songs {
-            let duration_song = song.get("duration").unwrap().to_string().parse::<f64>().unwrap();
-            let (min, sec) = Self::seconds_to_minsec(duration_song);
-            let duration = format!("{:02}", min) 
-                + ":" 
-                + format!("{:02}", sec).as_str();
+            let (min, sec) = Self::seconds_to_minsec(song.get("duration").unwrap().to_string().parse::<f64>().unwrap());
+            let duration = format!("{:02}", min) + ":" + format!("{:02}", sec).as_str();
             songs_datas.push(Row::new(vec![
                 song.get("title").unwrap().to_string(),
                 song.get("artist").unwrap().to_string(),
