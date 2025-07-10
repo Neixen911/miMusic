@@ -47,4 +47,4 @@ By building miMusic entirely in Rust, we aim to maximize both security and perfo
 
 ------------------------------------
 
-MIT © Neixen911
+    MIT © Neixen911
