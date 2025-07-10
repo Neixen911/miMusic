@@ -1,31 +1,22 @@
 #![feature(str_split_remainder)]
 
-use std::io::{self, BufReader};
-use std::fs::{self, File};
 use std::collections::HashMap;
-use rodio::{Decoder, OutputStream, Sink, source::EmptyCallback};
-use id3::{Tag, Content};
-use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
-use symphonia::default::get_probe;
+use std::fs::{self, File};
+use std::io::{self, BufReader};
+use std::path::PathBuf;
+use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use id3::{Tag, Content};
+use rodio::{Decoder, OutputStream, Sink, source::EmptyCallback};
+use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
+use symphonia::default::get_probe;
+use walkdir::WalkDir;
 
 #[derive(Default, Debug)]
 struct Player {
     m_song_infos: Vec<HashMap<String, String>>,
 	end_of_song_signal: Arc<AtomicU32>,
-}
-
-fn get_all_songs() -> Vec<HashMap<String, String>> {
-	let mut songs = Vec::new();
-	let songs_path = fs::read_dir("songs").unwrap();
-
-	for song_path in songs_path {
-		let song_infos = get_song_infos_from_file(song_path.unwrap().path().to_str().unwrap());
-		songs.push(song_infos);
-	}
-
-	songs
 }
 
 fn add_signal_end_song(sink: &Sink, player: &mut Player) {
@@ -43,40 +34,65 @@ fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 	add_signal_end_song(sink, player);
 }
 
-fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
-	let file = File::open(path).unwrap();
-	let tag = Tag::read_from2(&file).unwrap();
-	let mut song_infos = HashMap::new();
-	song_infos.insert(String::from("path"), path.to_string());
-	
-	for frame in tag.frames() {
-		let id = frame.id();
-	
-		match frame.content() {
-			Content::Text(value) => {
-				match id {
-					"TIT2" => {
-						song_infos.insert(String::from("title"), value.to_string());
-					}
-					"TPE1" => {
-						song_infos.insert(String::from("artist"), value.to_string());
-					}
+fn download_songs_from(url: &str) {
+    // Setup the libraries
+    let libraries_dir = PathBuf::from("libs");
+    let yt_dlp = libraries_dir.join("yt-dlp");
 
-					_default => {
-						continue;
-					}
-				}
-			}
-			_content => {
-				continue;
-			}
-		}
+    println!("Starting fetching song(s) infos ...");
+
+    // Fetching songs URL from playlist
+    let mut binding = Command::new(yt_dlp.to_str().unwrap());
+    let status = binding.args([
+        "--skip-download", 
+        "--no-playlist", 
+        "--print", "%(webpage_url)s", 
+        url, 
+    ]).output().expect("Failed to fetching song(s) url(s) !");
+
+    println!("Done !");
+
+    // String to Vec
+    let json_data = String::from_utf8_lossy(&status.stdout);
+    let urls: Vec<String> = json_data
+        .lines()
+        .map(|line| line.trim().to_string())
+        .collect();
+    let nb_song = urls.len();
+
+    println!("Starting to download {} song(s) ...", nb_song);
+
+    // Download songs from playlist
+    let output_dir = PathBuf::from("songs");
+    let mut id_song = WalkDir::new(&output_dir).into_iter().count() - 1;
+    for song_url in urls {
+        let filename = output_dir.join("song".to_owned() + &id_song.to_string() + ".%(ext)s");
+        let mut binding = Command::new(yt_dlp.to_str().unwrap());
+        let _status = binding.args([
+            "--no-write-subs", 
+            "-x", 
+            "--audio-format", "mp3", 
+            "--add-metadata", 
+            "-o", filename.to_str().unwrap(), 
+            &song_url, 
+        ]).output().expect("Failed to downloading song !");
+        println!("Song {} downloaded !", song_url);
+        id_song = id_song + 1;
+    }
+
+    println!("Done !");
+}
+
+fn get_all_songs() -> Vec<HashMap<String, String>> {
+	let mut songs = Vec::new();
+	let songs_path = fs::read_dir("songs").unwrap();
+
+	for song_path in songs_path {
+		let song_infos = get_song_infos_from_file(song_path.unwrap().path().to_str().unwrap());
+		songs.push(song_infos);
 	}
 
-	let seconds = get_audio_duration(path);
-	song_infos.insert(String::from("duration"), seconds.to_string());
-
-	song_infos
+	songs
 }
 
 fn get_audio_duration(path: &str) -> u32 {
@@ -125,6 +141,42 @@ fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
 	song_infos
 }
 
+fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
+	let file = File::open(path).unwrap();
+	let tag = Tag::read_from2(&file).unwrap();
+	let mut song_infos = HashMap::new();
+	song_infos.insert(String::from("path"), path.to_string());
+	
+	for frame in tag.frames() {
+		let id = frame.id();
+	
+		match frame.content() {
+			Content::Text(value) => {
+				match id {
+					"TIT2" => {
+						song_infos.insert(String::from("title"), value.to_string());
+					}
+					"TPE1" => {
+						song_infos.insert(String::from("artist"), value.to_string());
+					}
+
+					_default => {
+						continue;
+					}
+				}
+			}
+			_content => {
+				continue;
+			}
+		}
+	}
+
+	let seconds = get_audio_duration(path);
+	song_infos.insert(String::from("duration"), seconds.to_string());
+
+	song_infos
+}
+
 fn main() {
     let mut player = Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
     let (_stream, handle) = OutputStream::try_default().unwrap();
@@ -149,20 +201,29 @@ fn main() {
                 sink.pause();
             },
 
+			"resume" => {
+				sink.play();
+			},
+
             "play" => {
                 if !sink.is_paused() && args.remainder().is_some() {
 					let song_name = args.next().unwrap();
 
 					player.m_song_infos.push(get_song_infos_from_file(&song_name));
 					add_song_to_queue(&sink, &song_name, &mut player);
-				} else {
-					sink.play();
+				}
+			},
+
+			"download" => {
+				if args.remainder().is_some() {
+					let url = args.next().unwrap();
+                    download_songs_from(&url);
 				}
 			},
 
 			"list" => {
 				println!("{:?}", get_all_songs());
-			}
+			},
 
 			"skip" => {
 				sink.skip_one();
