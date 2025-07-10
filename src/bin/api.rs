@@ -39,8 +39,6 @@ fn download_songs_from(url: &str) {
     let libraries_dir = PathBuf::from("libs");
     let yt_dlp = libraries_dir.join("yt-dlp");
 
-    println!("Starting fetching song(s) infos ...");
-
     // Fetching songs URL from playlist
     let mut binding = Command::new(yt_dlp.to_str().unwrap());
     let status = binding.args([
@@ -50,17 +48,12 @@ fn download_songs_from(url: &str) {
         url, 
     ]).output().expect("Failed to fetching song(s) url(s) !");
 
-    println!("Done !");
-
     // String to Vec
     let json_data = String::from_utf8_lossy(&status.stdout);
     let urls: Vec<String> = json_data
         .lines()
         .map(|line| line.trim().to_string())
         .collect();
-    let nb_song = urls.len();
-
-    println!("Starting to download {} song(s) ...", nb_song);
 
     // Download songs from playlist
     let output_dir = PathBuf::from("songs");
@@ -76,11 +69,8 @@ fn download_songs_from(url: &str) {
             "-o", filename.to_str().unwrap(), 
             &song_url, 
         ]).output().expect("Failed to downloading song !");
-        println!("Song {} downloaded !", song_url);
         id_song = id_song + 1;
     }
-
-    println!("Done !");
 }
 
 fn get_all_songs() -> Vec<HashMap<String, String>> {
