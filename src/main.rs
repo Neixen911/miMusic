@@ -39,8 +39,8 @@ impl App {
         self.is_running = true;
         self.state_table = TableState::default().with_selected(0);
         self.player = music::Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
-        let (_stream, handle) = OutputStream::try_default().unwrap();
-        let sink = Sink::try_new(&handle).unwrap();
+        let (_stream, handle) = OutputStream::try_default().expect("Unable to get OutputStream !");
+        let sink = Sink::try_new(&handle).expect("Unable to create a Sink !");
         self.all_songs = music::get_all_songs();
         let tick_rate = Duration::from_millis(250);
         let mut last_tick = Instant::now();
@@ -103,8 +103,8 @@ impl App {
             None => 0,
         };
         let path = self.all_songs[i].get("path");
-        let path = path.as_deref().unwrap();
-        self.player.m_song_infos.push(music::get_song_infos_from_file(&path)); // To optimise
+        let path = path.as_deref().expect("Unable to make the varibale as ownership !");
+        self.player.m_song_infos.push(music::get_song_infos_from_file(&path)); // Remove pub function (if possible), access it only via the player
         music::add_song_to_queue(sink, &path, &mut self.player);
     }
 
@@ -189,13 +189,21 @@ impl App {
         frame.render_widget(playing_section, playing);
 
         let mut playing_lines: Vec<Line> = Vec::new();
-        playing_lines.push(Line::from(self.playing_infos.get(0).unwrap().to_string()));
-        playing_lines.push(Line::from(self.playing_infos.get(1).unwrap().to_string()));
+        playing_lines.push(Line::from(self.playing_infos.get(0).expect("Unable to get title from current playing song !").to_string()));
+        playing_lines.push(Line::from(self.playing_infos.get(1).expect("Unable to get artist from current playing song !").to_string()));
         let infos_section = Paragraph::new(playing_lines);
         frame.render_widget(infos_section, chunks[0]);
 
-        let act_duration_song = self.playing_infos.get(2).unwrap().to_string().parse::<f64>().unwrap();
-        let max_duration_song = self.playing_infos.get(3).unwrap().to_string().parse::<f64>().unwrap();
+        let act_duration_song = self.playing_infos.get(2)
+            .expect("Unable to get current duration from current playing song !")
+            .to_string()
+            .parse::<f64>()
+            .expect("Unable to convert into f64 !");
+        let max_duration_song = self.playing_infos.get(3)
+            .expect("Unable to get maximum duration from current playing song !")
+            .to_string()
+            .parse::<f64>()
+            .expect("Unable to convert into f64 !");
         let mut ratio = 0.0;
         let (act_minutes, act_seconds) = Self::seconds_to_minsec(act_duration_song);
         let (max_minutes, max_seconds) = Self::seconds_to_minsec(max_duration_song);
@@ -217,11 +225,15 @@ impl App {
         // Songs section
         let mut songs_datas: Vec<Row> = Vec::new();
         for song in &self.all_songs {
-            let (min, sec) = Self::seconds_to_minsec(song.get("duration").unwrap().to_string().parse::<f64>().unwrap());
+            let (min, sec) = Self::seconds_to_minsec(song.get("duration")
+                .expect("Unable to get song duration !")
+                .to_string()
+                .parse::<f64>()
+                .expect("Unable to convert into f64 !"));
             let duration = format!("{:02}", min) + ":" + format!("{:02}", sec).as_str();
             songs_datas.push(Row::new(vec![
-                song.get("title").unwrap().to_string(),
-                song.get("artist").unwrap().to_string(),
+                song.get("title").expect("Unable to get title from song !").to_string(),
+                song.get("artist").expect("Unable to get artist from song !").to_string(),
                 duration,
             ]));
         }

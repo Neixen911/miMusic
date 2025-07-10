@@ -180,18 +180,18 @@ fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 
 fn main() {
     let mut player = Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
-    let (_stream, handle) = OutputStream::try_default().unwrap();
-    let sink = Sink::try_new(&handle).unwrap();
+    let (_stream, handle) = OutputStream::try_default().expect("Unable to create OutputStream !");
+    let sink = Sink::try_new(&handle).expect("Unable to create a Sink !");
 
     loop {
         println!("Enter a command !");
         let mut input = String::new();
         io::stdin()
-                .read_line(&mut input)
-                .unwrap();
+			.read_line(&mut input)
+			.expect("Unable to get data from stdin !");
 
 		let mut args = input.trim_end().split(" ");
-		let first_parameter = args.next().unwrap();
+		let first_parameter = args.next().expect("Unable to get the first parameter of stdin !");
 	
         match first_parameter {
 	    	"infos" => {
@@ -208,7 +208,7 @@ fn main() {
 
             "play" => {
                 if !sink.is_paused() && args.remainder().is_some() {
-					let song_name = args.next().unwrap();
+					let song_name = args.next().expect("Unable to get the song name !");
 
 					player.m_song_infos.push(get_song_infos_from_file(&song_name));
 					add_song_to_queue(&sink, &song_name, &mut player);
@@ -217,8 +217,10 @@ fn main() {
 
 			"download" => {
 				if args.remainder().is_some() {
-					let url = args.next().unwrap();
-                    download_songs_from(&url);
+					while args.remainder().is_some() {
+						let url = args.next().expect("Unable to get url !");
+						download_songs_from(&url);
+					}
 				}
 			},
 
