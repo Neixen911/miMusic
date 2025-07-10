@@ -24,9 +24,9 @@ fn add_signal_end_song(sink: &Sink, player: &mut Player) {
 
 // Add a song to the queue
 pub fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
-	let file = File::open(path).unwrap();
+	let file = File::open(path).expect("Unable to open file !");
 	let buffer = BufReader::new(file);
-	let source = Decoder::new_mp3(buffer).unwrap();
+	let source = Decoder::new_mp3(buffer).expect("Unable to make a MP3 Decoder !");
 	sink.append(source);
 	add_signal_end_song(sink, player);
 }
@@ -37,7 +37,7 @@ fn download_songs_from(url: &str) {
     let yt_dlp = libraries_dir.join("yt-dlp");
 
     // Fetching song(s) URL(S)
-    let mut binding = Command::new(yt_dlp.to_str().unwrap());
+    let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
     let status = binding.args([
         "--skip-download", 
         "--no-playlist", 
@@ -56,13 +56,13 @@ fn download_songs_from(url: &str) {
     let mut id_song = WalkDir::new(&output_dir).into_iter().count() - 1;
     for song_url in urls {
         let filename = output_dir.join("song".to_owned() + &id_song.to_string() + ".%(ext)s");
-        let mut binding = Command::new(yt_dlp.to_str().unwrap());
+        let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
         let _status = binding.args([
             "--no-write-subs", 
             "-x", 
             "--audio-format", "mp3", 
             "--add-metadata", 
-            "-o", filename.to_str().unwrap(), 
+            "-o", filename.to_str().expect("Unable to convert to str"), 
             &song_url, 
         ]).output().expect("Failed to downloading song !");
         id_song = id_song + 1;
@@ -72,10 +72,10 @@ fn download_songs_from(url: &str) {
 // Return all the songs with their tags
 pub fn get_all_songs() -> Vec<HashMap<String, String>> {
 	let mut songs = Vec::new();
-	let songs_path = fs::read_dir("songs").unwrap();
+	let songs_path = fs::read_dir("songs").expect("Unable to find songs folder !");
 
 	for song_path in songs_path {
-		let song_infos = get_song_infos_from_file(song_path.unwrap().path().to_str().unwrap());
+		let song_infos = get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
 		songs.push(song_infos);
 	}
 
@@ -84,7 +84,7 @@ pub fn get_all_songs() -> Vec<HashMap<String, String>> {
 
 // Return total duration of a song from a path (calcul from his frames and rate)
 fn get_audio_duration(path: &str) -> u32 {
-    let file = File::open(path).unwrap();
+    let file = File::open(path).expect("Unable to open file !");
     let mss = MediaSourceStream::new(Box::new(file) as Box<dyn MediaSource>, Default::default());
 
     let probe = get_probe().format(
@@ -92,12 +92,12 @@ fn get_audio_duration(path: &str) -> u32 {
         mss,
         &FormatOptions::default(),
         &MetadataOptions::default(),
-    ).unwrap();
+    ).expect("Unable to get datas usefull for calculate audio duration !");
 
     let format = probe.format;
-    let track = format.default_track().unwrap();
-    let sample_rate = track.codec_params.sample_rate.unwrap();
-    let duration_in_frames = track.codec_params.n_frames.unwrap();
+    let track = format.default_track().expect("Unable to get track !");
+    let sample_rate = track.codec_params.sample_rate.expect("Unable to get sample_rate !");
+    let duration_in_frames = track.codec_params.n_frames.expect("Unable to get duration_in_frames !");
 
     let duration_seconds = duration_in_frames as f64 / sample_rate as f64;
 
@@ -119,11 +119,11 @@ pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
 		song_infos.push("0".to_string());
 	} else {
 		if !player.m_song_infos.is_empty() {
-			let actual_song = player.m_song_infos.get(0).unwrap();
-			song_infos.push(actual_song.get("title").unwrap().to_string());
-			song_infos.push(actual_song.get("artist").unwrap().to_string());
+			let actual_song = player.m_song_infos.get(0).expect("Unable to get the actual song !");
+			song_infos.push(actual_song.get("title").expect("Unable to get title !").to_string());
+			song_infos.push(actual_song.get("artist").expect("Unable to get artist !").to_string());
 			song_infos.push(sink.get_pos().as_secs().to_string());
-			song_infos.push(actual_song.get("duration").unwrap().to_string());
+			song_infos.push(actual_song.get("duration").expect("Unable to get duration !").to_string());
 		}
 	}
 
@@ -132,8 +132,8 @@ pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
 
 // Return infos from song file
 pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
-	let file = File::open(path).unwrap();
-	let tag = Tag::read_from2(&file).unwrap();
+	let file = File::open(path).expect("Unable to open file !");
+	let tag = Tag::read_from2(&file).expect("Unable to get tags from file !");
 	let mut song_infos = HashMap::new();
 	// Default datas
 	song_infos.insert(String::from("path"), "songs/song.mp3".to_string());
