@@ -163,11 +163,11 @@ impl App {
     // Draw TUI app
     fn draw(&mut self, frame: &mut Frame) {
         let vertical = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(5),
-            Constraint::Fill(1),
-            Constraint::Length(2),
-        ]);
+            Constraint::Length(1),              // Application section
+            Constraint::Length(5),              // Playing section
+            Constraint::Fill(1),                // Songs section
+            Constraint::Length(1),              // Hotkeys section
+        ]).margin(3);
         let [app, playing, songs, hotkeys] = vertical.areas(frame.area());
 
         // Application section
