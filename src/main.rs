@@ -10,12 +10,14 @@ use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Layout},
     style::{Color, Modifier, Style},
-    text::{Line, Text},
+    text::{Line, Span, Text},
     widgets::{Block, Gauge, Paragraph, Row, Table, TableState},
     DefaultTerminal, Frame,
 };
 
 mod music;
+
+const MAX_TIME_DOWNLOADING_SONG: u32 = 25;
 
 fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
@@ -191,7 +193,10 @@ impl App {
     }
 
     fn download_songs_from_url(&mut self, url: String) {
-        music::download_songs_from(&url);
+        let urls = music::retrieve_songs_urls_from(&url);
+        for song_url in urls {
+            music::download_song(song_url);
+        }
         self.input_editing = "".to_string();
         self.all_songs = music::get_all_songs();
     }
@@ -252,18 +257,22 @@ impl App {
         let mut ratio = 0.0;
         let (act_minutes, act_seconds) = Self::seconds_to_minsec(act_duration_song);
         let (max_minutes, max_seconds) = Self::seconds_to_minsec(max_duration_song);
-        let label = format!("{:02}", act_minutes) 
+        let label = Span::styled(
+            format!("{:02}", act_minutes) 
             + ":" 
             + format!("{:02}", act_seconds).as_str() 
             + " / " 
             + format!("{:02}", max_minutes).as_str() 
             + ":" 
-            + format!("{:02}", max_seconds).as_str();
+            + format!("{:02}", max_seconds).as_str(),
+            Style::default().fg(Color::Reset),
+        );
         if max_duration_song != 0.0 {
             ratio = act_duration_song / max_duration_song;
         }
         let gauge_section = Gauge::default()
             .ratio(ratio)
+            .gauge_style(Color::Magenta)
             .label(label);
         frame.render_widget(gauge_section, chunks[1]);
 

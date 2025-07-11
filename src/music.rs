@@ -34,8 +34,8 @@ pub fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 	add_signal_end_song(sink, player);
 }
 
-// Download song(s) from a unique URL
-pub fn download_songs_from(url: &str) {
+// Retrieve URL(s) song(s) from a unique URL
+pub fn retrieve_songs_urls_from(url: &str) -> Vec<String> {
     let libraries_dir = PathBuf::from("libs");
     let yt_dlp = libraries_dir.join("yt-dlp");
 
@@ -54,22 +54,27 @@ pub fn download_songs_from(url: &str) {
         .map(|line| line.trim().to_string())
         .collect();
 
-    // Download song(s)
+	urls
+}
+
+// Download song from a unique URL
+pub fn download_song(song_url: String) {
+    let libraries_dir = PathBuf::from("libs");
+    let yt_dlp = libraries_dir.join("yt-dlp");
     let output_dir = PathBuf::from("songs");
-    let mut id_song = WalkDir::new(&output_dir).into_iter().count() - 1;
-    for song_url in urls {
-        let filename = output_dir.join("song".to_owned() + &id_song.to_string() + ".%(ext)s");
-        let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
-        let _status = binding.args([
-            "--no-write-subs", 
-            "-x", 
-            "--audio-format", "mp3", 
-            "--add-metadata", 
-            "-o", filename.to_str().expect("Unable to convert to str"), 
-            &song_url, 
-        ]).output().expect("Failed to downloading song !");
-        id_song = id_song + 1;
-    }
+	
+    let id_song = WalkDir::new(&output_dir).into_iter().count() - 1;
+	let filename = output_dir.join("song".to_owned() + &id_song.to_string() + ".%(ext)s");
+
+	let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
+	let _status = binding.args([
+		"--no-write-subs", 
+		"-x", 
+		"--audio-format", "mp3", 
+		"--add-metadata", 
+		"-o", filename.to_str().expect("Unable to convert to str"), 
+		&song_url, 
+	]).output().expect("Failed to downloading song !");
 }
 
 // Return all the songs with their tags
