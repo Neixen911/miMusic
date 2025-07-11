@@ -35,7 +35,7 @@ pub fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 }
 
 // Download song(s) from a unique URL
-fn download_songs_from(url: &str) {
+pub fn download_songs_from(url: &str) {
     let libraries_dir = PathBuf::from("libs");
     let yt_dlp = libraries_dir.join("yt-dlp");
 

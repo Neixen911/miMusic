@@ -44,7 +44,7 @@ impl App {
         let (_stream, handle) = OutputStream::try_default().expect("Unable to get OutputStream !");
         let sink = Sink::try_new(&handle).expect("Unable to create a Sink !");
         self.is_editing = false;
-        self.input_editing = "ex: download https://youtube.com/watch?=miMusic".to_string();
+        self.input_editing = "ex: https://youtube.com/watch?=miMusic".to_string();
         self.all_songs = music::get_all_songs();
         let tick_rate = Duration::from_millis(250);
         let mut last_tick = Instant::now();
@@ -175,7 +175,7 @@ impl App {
         match self.is_editing {
             true => {
                 self.is_editing = false;
-                self.input_editing = "ex: download https://youtube.com/watch?=miMusic".to_string();
+                self.input_editing = "ex: https://youtube.com/watch?=miMusic".to_string();
             }
             false => {
                 self.is_editing = true;
@@ -193,7 +193,7 @@ impl App {
     }
 
     fn download_songs_from_url(&mut self, url: String) {
-        println!("{}", url);
+        music::download_songs_from(&url);
     }
 
     // Convert seconds to minutes/seconds
