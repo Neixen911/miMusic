@@ -44,7 +44,7 @@ impl App {
         let (_stream, handle) = OutputStream::try_default().expect("Unable to get OutputStream !");
         let sink = Sink::try_new(&handle).expect("Unable to create a Sink !");
         self.is_editing = false;
-        self.input_editing = "initialisation".to_string();
+        self.input_editing = "ex: download https://youtube.com/watch?=miMusic".to_string();
         self.all_songs = music::get_all_songs();
         let tick_rate = Duration::from_millis(250);
         let mut last_tick = Instant::now();
@@ -90,22 +90,23 @@ impl App {
         match self.is_editing {
             true => {
                 match key_event.code {
-                    KeyCode::Enter              => self.download_songs_from_url(self.input_editing.to_string()),
-                    KeyCode::Char(to_insert)    => self.update_input_text(to_insert),
-                    KeyCode::Tab                => self.switch_mode(),
+                    KeyCode::Enter                  => self.download_songs_from_url(self.input_editing.to_string()),
+                    KeyCode::Backspace              => self.remove_char_from_input(),
+                    KeyCode::Char(to_insert)        => self.insert_char_into_input(to_insert),
+                    KeyCode::Esc                    => self.switch_mode(),
                     _ => {}
                 }
             }, 
 
             false => {
                 match key_event.code {
-                    KeyCode::Char('q')          => self.exit(),
-                    KeyCode::Enter              => self.add_song_to_queue(sink),
-                    KeyCode::Up                 => self.previous_song(),
-                    KeyCode::Down               => self.next_song(),
-                    KeyCode::Right              => self.skip_song(sink),
-                    KeyCode::Char(' ')          => self.pause_play_song(sink),
-                    KeyCode::Tab                => self.switch_mode(),
+                    KeyCode::Char('q')              => self.exit(),
+                    KeyCode::Enter                  => self.add_song_to_queue(sink),
+                    KeyCode::Up                     => self.previous_song(),
+                    KeyCode::Down                   => self.next_song(),
+                    KeyCode::Right                  => self.skip_song(sink),
+                    KeyCode::Char(' ')              => self.pause_play_song(sink),
+                    KeyCode::Tab                    => self.switch_mode(),
                     _ => {}
                 }
             }
@@ -171,15 +172,24 @@ impl App {
     }
 
     fn switch_mode(&mut self) {
-        self.input_editing = "ex: download https://youtube.com/watch?=miMusic".to_string();
         match self.is_editing {
-            true => { self.is_editing = false; }
-            false => { self.is_editing = true; }
+            true => {
+                self.is_editing = false;
+                self.input_editing = "ex: download https://youtube.com/watch?=miMusic".to_string();
+            }
+            false => {
+                self.is_editing = true;
+                self.input_editing = "".to_string();
+            }
         }
     }
 
-    fn update_input_text(&mut self, new_char: char) {
-        self.input_editing = new_char.to_string();
+    fn remove_char_from_input(&mut self) {
+        self.input_editing.pop();
+    }
+
+    fn insert_char_into_input(&mut self, new_char: char) {
+        self.input_editing.push_str(&new_char.to_string());
     }
 
     fn download_songs_from_url(&mut self, url: String) {
@@ -304,7 +314,7 @@ impl App {
         // Hotkeys section
         let mut hotkeys_text = "Move up <Up> - Move down <Down> - Play <Enter> - Play/Pause <Space> - Skip <Right> - Switch mode <Tab> - Quit <Q>";
         if self.is_editing {
-            hotkeys_text = "Download <Enter> - Switch mode <Tab>";
+            hotkeys_text = "Download <Enter> - Switch mode <Esc>";
         }
         let hotkeys_section = Block::default()
             .title(Line::from(hotkeys_text).centered());
