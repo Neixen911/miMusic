@@ -9,7 +9,7 @@ use rodio::{OutputStream, Sink};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Layout},
-    style::{Style},
+    style::{Color, Modifier, Style},
     text::{Line, Text},
     widgets::{Block, Gauge, Paragraph, Row, Table, TableState},
     DefaultTerminal, Frame,
@@ -165,10 +165,11 @@ impl App {
         let vertical = Layout::vertical([
             Constraint::Length(1),              // Application section
             Constraint::Length(5),              // Playing section
+            Constraint::Length(3),              // Download section
             Constraint::Fill(1),                // Songs section
             Constraint::Length(1),              // Hotkeys section
         ]).margin(3);
-        let [app, playing, songs, hotkeys] = vertical.areas(frame.area());
+        let [app, playing, download, songs, hotkeys] = vertical.areas(frame.area());
 
         // Application section
         let app_text = Block::default()
@@ -222,6 +223,22 @@ impl App {
             .label(label);
         frame.render_widget(gauge_section, chunks[1]);
 
+        // Download section
+        let chunks = Layout::vertical([
+            Constraint::Length(3),
+        ])
+        .margin(1)
+        .split(download);
+
+        let download_section = Block::default()
+            .title(Line::from("Now Playing"))
+            .borders(ratatui::widgets::Borders::ALL);
+        frame.render_widget(download_section, download);
+
+        let input_url = Paragraph::new("ex: download https://youtube.com/watch?=miMusic")
+            .style(Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC));
+        frame.render_widget(input_url, chunks[0]);
+
         // Songs section
         let mut songs_datas: Vec<Row> = Vec::new();
         for song in &self.all_songs {
@@ -246,7 +263,7 @@ impl App {
                 Constraint::Length(10),
             ])
             .header(header)
-            .row_highlight_style(Style::default().fg(ratatui::style::Color::Yellow))
+            .row_highlight_style(Style::default().fg(Color::Magenta))
             .highlight_symbol(Text::from(vec![" █ ".into()]));
         frame.render_stateful_widget(songs_table, songs, &mut self.state_table);
 
