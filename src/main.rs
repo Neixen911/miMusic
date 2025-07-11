@@ -29,6 +29,8 @@ pub struct App {
     state_table: TableState,
     player: music::Player,
     playing_infos: Vec<String>,
+    is_editing: bool,
+    input_editing: String,
     all_songs: Vec<HashMap<String, String>>,
     is_running: bool,
 }
@@ -41,6 +43,8 @@ impl App {
         self.player = music::Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
         let (_stream, handle) = OutputStream::try_default().expect("Unable to get OutputStream !");
         let sink = Sink::try_new(&handle).expect("Unable to create a Sink !");
+        self.is_editing = false;
+        self.input_editing = "initialisation".to_string();
         self.all_songs = music::get_all_songs();
         let tick_rate = Duration::from_millis(250);
         let mut last_tick = Instant::now();
@@ -83,14 +87,28 @@ impl App {
 
     // Match key event to dedicated function
     fn handle_key_event(&mut self, key_event: KeyEvent, sink: &Sink) {
-        match key_event.code {
-            KeyCode::Char('q') => self.exit(),
-            KeyCode::Enter => self.add_song_to_queue(sink),
-            KeyCode::Up => self.previous_song(),
-            KeyCode::Down => self.next_song(),
-            KeyCode::Right => self.skip_song(sink),
-            KeyCode::Char(' ') => self.pause_play_song(sink),
-            _ => {}
+        match self.is_editing {
+            true => {
+                match key_event.code {
+                    KeyCode::Enter              => self.download_songs_from_url(self.input_editing.to_string()),
+                    KeyCode::Char(to_insert)    => self.update_input_text(to_insert),
+                    KeyCode::Tab                => self.switch_mode(),
+                    _ => {}
+                }
+            }, 
+
+            false => {
+                match key_event.code {
+                    KeyCode::Char('q')          => self.exit(),
+                    KeyCode::Enter              => self.add_song_to_queue(sink),
+                    KeyCode::Up                 => self.previous_song(),
+                    KeyCode::Down               => self.next_song(),
+                    KeyCode::Right              => self.skip_song(sink),
+                    KeyCode::Char(' ')          => self.pause_play_song(sink),
+                    KeyCode::Tab                => self.switch_mode(),
+                    _ => {}
+                }
+            }
         }
     }
 
@@ -150,6 +168,22 @@ impl App {
         if !sink.is_paused() {
             sink.pause();
         } else { sink.play(); }
+    }
+
+    fn switch_mode(&mut self) {
+        self.input_editing = "ex: download https://youtube.com/watch?=miMusic".to_string();
+        match self.is_editing {
+            true => { self.is_editing = false; }
+            false => { self.is_editing = true; }
+        }
+    }
+
+    fn update_input_text(&mut self, new_char: char) {
+        self.input_editing = new_char.to_string();
+    }
+
+    fn download_songs_from_url(&mut self, url: String) {
+        println!("{}", url);
     }
 
     // Convert seconds to minutes/seconds
@@ -235,7 +269,7 @@ impl App {
             .borders(ratatui::widgets::Borders::ALL);
         frame.render_widget(download_section, download);
 
-        let input_url = Paragraph::new("ex: download https://youtube.com/watch?=miMusic")
+        let input_url = Paragraph::new(self.input_editing.clone())
             .style(Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC));
         frame.render_widget(input_url, chunks[0]);
 
@@ -268,9 +302,13 @@ impl App {
         frame.render_stateful_widget(songs_table, songs, &mut self.state_table);
 
         // Hotkeys section
-        let hotkeys_text = Block::default()
-            .title(Line::from("Move up <Up> - Move down <Down> - Play <Enter> - Play/Pause <Space> - Skip <Right> - Quit <Q>").centered());
-        frame.render_widget(hotkeys_text, hotkeys);
+        let mut hotkeys_text = "Move up <Up> - Move down <Down> - Play <Enter> - Play/Pause <Space> - Skip <Right> - Switch mode <Tab> - Quit <Q>";
+        if self.is_editing {
+            hotkeys_text = "Download <Enter> - Switch mode <Tab>";
+        }
+        let hotkeys_section = Block::default()
+            .title(Line::from(hotkeys_text).centered());
+        frame.render_widget(hotkeys_section, hotkeys);
     }
 
     // Exit the app on key pressed
