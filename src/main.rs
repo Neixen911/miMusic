@@ -175,11 +175,9 @@ impl App {
         match self.is_editing {
             true => {
                 self.is_editing = false;
-                self.input_editing = "ex: https://youtube.com/watch?=miMusic".to_string();
             }
             false => {
                 self.is_editing = true;
-                self.input_editing = "".to_string();
             }
         }
     }
@@ -194,6 +192,8 @@ impl App {
 
     fn download_songs_from_url(&mut self, url: String) {
         music::download_songs_from(&url);
+        self.input_editing = "".to_string();
+        self.all_songs = music::get_all_songs();
     }
 
     // Convert seconds to minutes/seconds
