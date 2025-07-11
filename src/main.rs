@@ -9,7 +9,7 @@ use rodio::{OutputStream, Sink};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Layout},
-    style::{Style},
+    style::{Color, Modifier, Style},
     text::{Line, Text},
     widgets::{Block, Gauge, Paragraph, Row, Table, TableState},
     DefaultTerminal, Frame,
@@ -29,6 +29,8 @@ pub struct App {
     state_table: TableState,
     player: music::Player,
     playing_infos: Vec<String>,
+    is_editing: bool,
+    input_editing: String,
     all_songs: Vec<HashMap<String, String>>,
     is_running: bool,
 }
@@ -39,8 +41,10 @@ impl App {
         self.is_running = true;
         self.state_table = TableState::default().with_selected(0);
         self.player = music::Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
-        let (_stream, handle) = OutputStream::try_default().unwrap();
-        let sink = Sink::try_new(&handle).unwrap();
+        let (_stream, handle) = OutputStream::try_default().expect("Unable to get OutputStream !");
+        let sink = Sink::try_new(&handle).expect("Unable to create a Sink !");
+        self.is_editing = false;
+        self.input_editing = "ex: https://youtube.com/watch?=miMusic".to_string();
         self.all_songs = music::get_all_songs();
         let tick_rate = Duration::from_millis(250);
         let mut last_tick = Instant::now();
@@ -83,14 +87,29 @@ impl App {
 
     // Match key event to dedicated function
     fn handle_key_event(&mut self, key_event: KeyEvent, sink: &Sink) {
-        match key_event.code {
-            KeyCode::Char('q') => self.exit(),
-            KeyCode::Enter => self.add_song_to_queue(sink),
-            KeyCode::Up => self.previous_song(),
-            KeyCode::Down => self.next_song(),
-            KeyCode::Right => self.skip_song(sink),
-            KeyCode::Char(' ') => self.pause_play_song(sink),
-            _ => {}
+        match self.is_editing {
+            true => {
+                match key_event.code {
+                    KeyCode::Enter                  => self.download_songs_from_url(self.input_editing.to_string()),
+                    KeyCode::Backspace              => self.remove_char_from_input(),
+                    KeyCode::Char(to_insert)        => self.insert_char_into_input(to_insert),
+                    KeyCode::Esc                    => self.switch_mode(),
+                    _ => {}
+                }
+            }, 
+
+            false => {
+                match key_event.code {
+                    KeyCode::Char('q')              => self.exit(),
+                    KeyCode::Enter                  => self.add_song_to_queue(sink),
+                    KeyCode::Up                     => self.previous_song(),
+                    KeyCode::Down                   => self.next_song(),
+                    KeyCode::Right                  => self.skip_song(sink),
+                    KeyCode::Char(' ')              => self.pause_play_song(sink),
+                    KeyCode::Tab                    => self.switch_mode(),
+                    _ => {}
+                }
+            }
         }
     }
 
@@ -103,8 +122,8 @@ impl App {
             None => 0,
         };
         let path = self.all_songs[i].get("path");
-        let path = path.as_deref().unwrap();
-        self.player.m_song_infos.push(music::get_song_infos_from_file(&path)); // To optimise
+        let path = path.as_deref().expect("Unable to make the varibale as ownership !");
+        self.player.m_song_infos.push(music::get_song_infos_from_file(&path)); // Remove pub function (if possible), access it only via the player
         music::add_song_to_queue(sink, &path, &mut self.player);
     }
 
@@ -152,6 +171,31 @@ impl App {
         } else { sink.play(); }
     }
 
+    fn switch_mode(&mut self) {
+        match self.is_editing {
+            true => {
+                self.is_editing = false;
+                self.input_editing = "ex: https://youtube.com/watch?=miMusic".to_string();
+            }
+            false => {
+                self.is_editing = true;
+                self.input_editing = "".to_string();
+            }
+        }
+    }
+
+    fn remove_char_from_input(&mut self) {
+        self.input_editing.pop();
+    }
+
+    fn insert_char_into_input(&mut self, new_char: char) {
+        self.input_editing.push_str(&new_char.to_string());
+    }
+
+    fn download_songs_from_url(&mut self, url: String) {
+        music::download_songs_from(&url);
+    }
+
     // Convert seconds to minutes/seconds
     fn seconds_to_minsec(seconds: f64) -> (u32, u32) {
         let min = (seconds / 60.0).floor() as u32;
@@ -163,12 +207,13 @@ impl App {
     // Draw TUI app
     fn draw(&mut self, frame: &mut Frame) {
         let vertical = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(5),
-            Constraint::Fill(1),
-            Constraint::Length(2),
-        ]);
-        let [app, playing, songs, hotkeys] = vertical.areas(frame.area());
+            Constraint::Length(1),              // Application section
+            Constraint::Length(5),              // Playing section
+            Constraint::Length(3),              // Download section
+            Constraint::Fill(1),                // Songs section
+            Constraint::Length(1),              // Hotkeys section
+        ]).margin(3);
+        let [app, playing, download, songs, hotkeys] = vertical.areas(frame.area());
 
         // Application section
         let app_text = Block::default()
@@ -189,13 +234,21 @@ impl App {
         frame.render_widget(playing_section, playing);
 
         let mut playing_lines: Vec<Line> = Vec::new();
-        playing_lines.push(Line::from(self.playing_infos.get(0).unwrap().to_string()));
-        playing_lines.push(Line::from(self.playing_infos.get(1).unwrap().to_string()));
+        playing_lines.push(Line::from(self.playing_infos.get(0).expect("Unable to get title from current playing song !").to_string()));
+        playing_lines.push(Line::from(self.playing_infos.get(1).expect("Unable to get artist from current playing song !").to_string()));
         let infos_section = Paragraph::new(playing_lines);
         frame.render_widget(infos_section, chunks[0]);
 
-        let act_duration_song = self.playing_infos.get(2).unwrap().to_string().parse::<f64>().unwrap();
-        let max_duration_song = self.playing_infos.get(3).unwrap().to_string().parse::<f64>().unwrap();
+        let act_duration_song = self.playing_infos.get(2)
+            .expect("Unable to get current duration from current playing song !")
+            .to_string()
+            .parse::<f64>()
+            .expect("Unable to convert into f64 !");
+        let max_duration_song = self.playing_infos.get(3)
+            .expect("Unable to get maximum duration from current playing song !")
+            .to_string()
+            .parse::<f64>()
+            .expect("Unable to convert into f64 !");
         let mut ratio = 0.0;
         let (act_minutes, act_seconds) = Self::seconds_to_minsec(act_duration_song);
         let (max_minutes, max_seconds) = Self::seconds_to_minsec(max_duration_song);
@@ -214,14 +267,34 @@ impl App {
             .label(label);
         frame.render_widget(gauge_section, chunks[1]);
 
+        // Download section
+        let chunks = Layout::vertical([
+            Constraint::Length(3),
+        ])
+        .margin(1)
+        .split(download);
+
+        let download_section = Block::default()
+            .title(Line::from("Now Playing"))
+            .borders(ratatui::widgets::Borders::ALL);
+        frame.render_widget(download_section, download);
+
+        let input_url = Paragraph::new(self.input_editing.clone())
+            .style(Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC));
+        frame.render_widget(input_url, chunks[0]);
+
         // Songs section
         let mut songs_datas: Vec<Row> = Vec::new();
         for song in &self.all_songs {
-            let (min, sec) = Self::seconds_to_minsec(song.get("duration").unwrap().to_string().parse::<f64>().unwrap());
+            let (min, sec) = Self::seconds_to_minsec(song.get("duration")
+                .expect("Unable to get song duration !")
+                .to_string()
+                .parse::<f64>()
+                .expect("Unable to convert into f64 !"));
             let duration = format!("{:02}", min) + ":" + format!("{:02}", sec).as_str();
             songs_datas.push(Row::new(vec![
-                song.get("title").unwrap().to_string(),
-                song.get("artist").unwrap().to_string(),
+                song.get("title").expect("Unable to get title from song !").to_string(),
+                song.get("artist").expect("Unable to get artist from song !").to_string(),
                 duration,
             ]));
         }
@@ -234,14 +307,18 @@ impl App {
                 Constraint::Length(10),
             ])
             .header(header)
-            .row_highlight_style(Style::default().fg(ratatui::style::Color::Yellow))
+            .row_highlight_style(Style::default().fg(Color::Magenta))
             .highlight_symbol(Text::from(vec![" █ ".into()]));
         frame.render_stateful_widget(songs_table, songs, &mut self.state_table);
 
         // Hotkeys section
-        let hotkeys_text = Block::default()
-            .title(Line::from("Move up <Up> - Move down <Down> - Play <Enter> - Play/Pause <Space> - Skip <Right> - Quit <Q>").centered());
-        frame.render_widget(hotkeys_text, hotkeys);
+        let mut hotkeys_text = "Move up <Up> - Move down <Down> - Play <Enter> - Play/Pause <Space> - Skip <Right> - Switch mode <Tab> - Quit <Q>";
+        if self.is_editing {
+            hotkeys_text = "Download <Enter> - Switch mode <Esc>";
+        }
+        let hotkeys_section = Block::default()
+            .title(Line::from(hotkeys_text).centered());
+        frame.render_widget(hotkeys_section, hotkeys);
     }
 
     // Exit the app on key pressed
