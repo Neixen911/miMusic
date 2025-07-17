@@ -8,5 +8,6 @@ id3 = "1.16.2"
 ratatui = "0.29.0"
 rodio = { version = "0.20.1", default-features = false, features = ["symphonia-mp3"] }
 symphonia = { version = "0.5.4", features = ["mp3"] }
+tokio = "1.46.1"
 walkdir = "2.5.0"
 yt-dlp = "1.3.4"
