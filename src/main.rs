@@ -195,13 +195,13 @@ impl App {
     }
 
     fn download_songs_from_url(&mut self, url: String) {
-        let urls: Vec<String> = music::retrieve_songs_urls_from(&url);
+        tokio::spawn( async move {
+            let urls = music::retrieve_songs_urls_from(&url);
 
-        for song_url in urls {
-            tokio::spawn( async {
+            for song_url in urls.await {
                 music::download_song(song_url).await
-            });
-        }
+            }
+        });
     }
 
     // Convert seconds to minutes/seconds

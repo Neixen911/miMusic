@@ -35,7 +35,7 @@ pub fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 }
 
 // Retrieve URL(s) song(s) from a unique URL
-pub fn retrieve_songs_urls_from(url: &str) -> Vec<String> {
+pub async fn retrieve_songs_urls_from(url: &str) -> Vec<String> {
     let libraries_dir = PathBuf::from("libs");
     let yt_dlp = libraries_dir.join("yt-dlp");
 
