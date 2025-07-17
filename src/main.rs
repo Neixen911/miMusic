@@ -1,23 +1,25 @@
 #![feature(str_split_remainder)]
 
+use ratatui::{
+    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    layout::{Constraint, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
+    widgets::{Block, Gauge, Paragraph, Row, Table, TableState},
+    DefaultTerminal, Frame,
+};
+use rodio::{OutputStream, Sink};
 use std::io;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use rodio::{OutputStream, Sink};
-use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
-    layout::{Constraint, Layout},
-    style::{Color, Modifier, Style},
-    text::{Line, Text},
-    widgets::{Block, Gauge, Paragraph, Row, Table, TableState},
-    DefaultTerminal, Frame,
-};
+use tokio;
 
 mod music;
 
-fn main() -> io::Result<()> {
+#[tokio::main]
+async fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
     let app_result = App::default().run(&mut terminal);
     ratatui::restore();
@@ -44,7 +46,7 @@ impl App {
         let (_stream, handle) = OutputStream::try_default().expect("Unable to get OutputStream !");
         let sink = Sink::try_new(&handle).expect("Unable to create a Sink !");
         self.is_editing = false;
-        self.input_editing = "ex: https://youtube.com/watch?=miMusic".to_string();
+        self.input_editing = "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string();
         self.all_songs = music::get_all_songs();
         let tick_rate = Duration::from_millis(250);
         let mut last_tick = Instant::now();
@@ -90,23 +92,23 @@ impl App {
         match self.is_editing {
             true => {
                 match key_event.code {
-                    KeyCode::Enter                  => self.download_songs_from_url(self.input_editing.to_string()),
-                    KeyCode::Backspace              => self.remove_char_from_input(),
-                    KeyCode::Char(to_insert)        => self.insert_char_into_input(to_insert),
-                    KeyCode::Esc                    => self.switch_mode(),
+                    KeyCode::Enter                  => { self.download_songs_from_url(self.input_editing.to_string()); },
+                    KeyCode::Backspace              => { self.remove_char_from_input(); },
+                    KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
+                    KeyCode::Esc                    => { self.switch_mode(); },
                     _ => {}
                 }
             }, 
 
             false => {
                 match key_event.code {
-                    KeyCode::Char('q')              => self.exit(),
-                    KeyCode::Enter                  => self.add_song_to_queue(sink),
-                    KeyCode::Up                     => self.previous_song(),
-                    KeyCode::Down                   => self.next_song(),
-                    KeyCode::Right                  => self.skip_song(sink),
-                    KeyCode::Char(' ')              => self.pause_play_song(sink),
-                    KeyCode::Tab                    => self.switch_mode(),
+                    KeyCode::Char('q')              => { self.exit(); },
+                    KeyCode::Enter                  => { self.add_song_to_queue(sink); },
+                    KeyCode::Up                     => { self.previous_song(); },
+                    KeyCode::Down                   => { self.next_song(); },
+                    KeyCode::Right                  => { self.skip_song(sink); },
+                    KeyCode::Char(' ')              => { self.pause_play_song(sink); },
+                    KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
             }
@@ -175,11 +177,9 @@ impl App {
         match self.is_editing {
             true => {
                 self.is_editing = false;
-                self.input_editing = "ex: https://youtube.com/watch?=miMusic".to_string();
             }
             false => {
                 self.is_editing = true;
-                self.input_editing = "".to_string();
             }
         }
     }
@@ -193,7 +193,15 @@ impl App {
     }
 
     fn download_songs_from_url(&mut self, url: String) {
-        music::download_songs_from(&url);
+        let urls = tokio::spawn( async move {
+            music::retrieve_songs_urls_from(&url).await
+        });
+
+        tokio::spawn( async {
+            for song_url in urls.await.expect("Couldn't retrieve songs urls !") {
+                music::download_song(song_url).await;
+            }
+        });
     }
 
     // Convert seconds to minutes/seconds
@@ -252,18 +260,22 @@ impl App {
         let mut ratio = 0.0;
         let (act_minutes, act_seconds) = Self::seconds_to_minsec(act_duration_song);
         let (max_minutes, max_seconds) = Self::seconds_to_minsec(max_duration_song);
-        let label = format!("{:02}", act_minutes) 
+        let label = Span::styled(
+            format!("{:02}", act_minutes) 
             + ":" 
             + format!("{:02}", act_seconds).as_str() 
             + " / " 
             + format!("{:02}", max_minutes).as_str() 
             + ":" 
-            + format!("{:02}", max_seconds).as_str();
+            + format!("{:02}", max_seconds).as_str(),
+            Style::default().fg(Color::Reset),
+        );
         if max_duration_song != 0.0 {
             ratio = act_duration_song / max_duration_song;
         }
         let gauge_section = Gauge::default()
             .ratio(ratio)
+            .gauge_style(Color::Magenta)
             .label(label);
         frame.render_widget(gauge_section, chunks[1]);
 
