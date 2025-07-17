@@ -39,7 +39,7 @@ By building miMusic entirely in Rust, we aim to maximize both security and perfo
 
 ### Coming Soon
 
-- [ ] Visual EQ and audio effects
+- [ ] Audio waveform
 - [ ] More ID3 tags
 - [ ] Unique playback for one device
 - [ ] Download song from TUI
