@@ -58,7 +58,7 @@ pub fn retrieve_songs_urls_from(url: &str) -> Vec<String> {
 }
 
 // Download song from a unique URL
-pub fn download_song(song_url: String) {
+pub async fn download_song(song_url: String) {
     let libraries_dir = PathBuf::from("libs");
     let yt_dlp = libraries_dir.join("yt-dlp");
     let output_dir = PathBuf::from("songs");
