@@ -18,8 +18,6 @@ use tokio;
 
 mod music;
 
-const MAX_TIME_DOWNLOADING_SONG: u32 = 25;
-
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
@@ -195,11 +193,13 @@ impl App {
     }
 
     fn download_songs_from_url(&mut self, url: String) {
-        tokio::spawn( async move {
-            let urls = music::retrieve_songs_urls_from(&url);
+        let urls = tokio::spawn( async move {
+            music::retrieve_songs_urls_from(&url).await
+        });
 
-            for song_url in urls.await {
-                music::download_song(song_url).await
+        tokio::spawn( async {
+            for song_url in urls.await.expect("Couldn't retrieve songs urls !") {
+                music::download_song(song_url).await;
             }
         });
     }
