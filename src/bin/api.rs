@@ -2,13 +2,13 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, BufReader};
+use std::io::{self};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use id3::{Tag, Content};
-use rodio::{Decoder, OutputStream, Sink, source::EmptyCallback};
+use rodio::{Decoder, OutputStreamBuilder, Sink, source::EmptyCallback};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
 use walkdir::WalkDir;
@@ -22,7 +22,7 @@ struct Player {
 // Add signal to know when a song is ended
 fn add_signal_end_song(sink: &Sink, player: &mut Player) {
 	let end_of_song_signal = player.end_of_song_signal.clone();
-	sink.append(EmptyCallback::<i16>::new(Box::new(move || {
+	sink.append(EmptyCallback::new(Box::new(move || {
 		end_of_song_signal.store(1, Ordering::Relaxed);
 	})));
 }
@@ -30,8 +30,7 @@ fn add_signal_end_song(sink: &Sink, player: &mut Player) {
 // Add a song to the queue
 fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 	let file = File::open(path).expect("Unable to open file !");
-	let buffer = BufReader::new(file);
-	let source = Decoder::new_mp3(buffer).expect("Unable to make a MP3 Decoder !");
+	let source = Decoder::new_mp3(file).expect("Unable to make a MP3 Decoder !");
 	sink.append(source);
 	add_signal_end_song(sink, player);
 }
@@ -180,8 +179,9 @@ fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 
 fn main() {
     let mut player = Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
-    let (_stream, handle) = OutputStream::try_default().expect("Unable to create OutputStream !");
-    let sink = Sink::try_new(&handle).expect("Unable to create a Sink !");
+    let mut stream_handle = OutputStreamBuilder::open_default_stream().expect("Unable to create OutputStreamBuilder !");
+	stream_handle.log_on_drop(false);
+    let sink = Sink::connect_new(stream_handle.mixer());
 
     loop {
         println!("Enter a command !");
