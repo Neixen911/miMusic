@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::BufReader;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -20,7 +19,7 @@ pub struct Player {
 // Add signal to know when a song is ended
 fn add_signal_end_song(sink: &Sink, player: &mut Player) {
 	let end_of_song_signal = player.end_of_song_signal.clone();
-	sink.append(EmptyCallback::<i16>::new(Box::new(move || {
+	sink.append(EmptyCallback::new(Box::new(move || {
 		end_of_song_signal.store(1, Ordering::Relaxed);
 	})));
 }
@@ -28,8 +27,7 @@ fn add_signal_end_song(sink: &Sink, player: &mut Player) {
 // Add a song to the queue
 pub fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 	let file = File::open(path).expect("Unable to open file !");
-	let buffer = BufReader::new(file);
-	let source = Decoder::new_mp3(buffer).expect("Unable to make a MP3 Decoder !");
+	let source = Decoder::new_mp3(file).expect("Unable to make a MP3 Decoder !");
 	sink.append(source);
 	add_signal_end_song(sink, player);
 }

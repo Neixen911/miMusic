@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Gauge, Paragraph, Row, Table, TableState},
     DefaultTerminal, Frame,
 };
-use rodio::{OutputStream, Sink};
+use rodio::{OutputStreamBuilder, Sink};
 use std::io;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU32;
@@ -43,8 +43,8 @@ impl App {
         self.is_running = true;
         self.state_table = TableState::default().with_selected(0);
         self.player = music::Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
-        let (_stream, handle) = OutputStream::try_default().expect("Unable to get OutputStream !");
-        let sink = Sink::try_new(&handle).expect("Unable to create a Sink !");
+        let stream_handle = OutputStreamBuilder::open_default_stream().expect("Unable to get OutputStreamBuilder !");
+        let sink = Sink::connect_new(stream_handle.mixer());
         self.is_editing = false;
         self.input_editing = "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string();
         self.all_songs = music::get_all_songs();
