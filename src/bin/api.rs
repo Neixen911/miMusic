@@ -183,6 +183,19 @@ fn main() {
     let (_stream, handle) = OutputStream::try_default().expect("Unable to create OutputStream !");
     let sink = Sink::try_new(&handle).expect("Unable to create a Sink !");
 
+	println!("
+	███▄ ▄███▓ ██▓ ███▄ ▄███▓ █    ██  ██████  ██▓ ▄████▄  
+	▓██▒▀█▀ ██▒▓██▒▓██▒▀█▀ ██▒ ██  ▓██▒██    ▒ ▓██▒▒██▀ ▀█  
+	▓██    ▓██░▒██▒▓██    ▓██░▓██  ▒██░ ▓██▄   ▒██▒▒▓█    ▄ 
+	▒██    ▒██ ░██░▒██    ▒██ ▓▓█  ░██░ ▒   ██▒░██░▒▓▓▄ ▄██▒
+	▒██▒   ░██▒░██░▒██▒   ░██▒▒▒█████▓▒██████▒▒░██░▒ ▓███▀ ░
+	░ ▒░   ░  ░░▓  ░ ▒░   ░  ░░▒▓▒ ▒ ▒▒ ▒▓▒ ▒ ░░▓  ░ ░▒ ▒  ░
+	░  ░      ░ ▒ ░░  ░      ░░░▒░ ░ ░░ ░▒  ░ ░ ▒ ░  ░  ▒   
+	░      ░    ▒ ░░      ░    ░░░ ░ ░░  ░  ░   ▒ ░░        
+	    ░    ░         ░      ░          ░   ░  ░ ░      
+	                                            ░        
+	");
+
     loop {
         println!("Enter a command !");
         let mut input = String::new();
