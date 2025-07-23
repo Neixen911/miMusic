@@ -112,8 +112,11 @@ fn applying_metadata(filename: String) {
 		new_title = new_title.replace(&new_artist, "");
 	}
 
-	let bracket_regex = Regex::new(r"\(.*\)").expect("Can't create Regex !");
-	new_title = bracket_regex.replace_all(&new_title, "").to_string();
+	let list_regex = [ r"\(.*\)", r"feat.*", r"ft.*" ];
+	for regex in list_regex {
+		let regex_to_remove = Regex::new(regex).expect("Can't create Regex !");
+		new_title = regex_to_remove.replace_all(&new_title, "").to_string();
+	}
 
 	let mut position: u8 = 0;
 	let tmp = new_title.clone();
@@ -140,10 +143,9 @@ fn applying_metadata(filename: String) {
 fn have_whitespace_after(title: &mut Chars<'_>, position: u8) -> bool {
 	let length: usize = title.clone().count() - 1;
 	let next_character_position: usize = (position + 1).into();
-	let next_character: char = title.nth(next_character_position).expect("Can't get next character !");
 	
 	if next_character_position <= length {
-		if next_character.is_whitespace() {
+		if title.nth(next_character_position).expect("Can't get next character !").is_whitespace() {
 			return true;
 		} else {
 			return false;
