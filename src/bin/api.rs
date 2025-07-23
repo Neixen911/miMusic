@@ -120,7 +120,6 @@ fn applying_metadata(filename: String) {
 	let new_title_iter = tmp.chars();
 
 	for character in new_title_iter {
-		println!("{}", new_title);
 		if !character.is_ascii_alphabetic() && have_whitespace_after(&mut new_title.chars(), position) {
 			new_title = new_title.replace(character, " ");
 		}
@@ -142,8 +141,6 @@ fn have_whitespace_after(title: &mut Chars<'_>, position: u8) -> bool {
 	let length: usize = title.clone().count() - 1;
 	let next_character_position: usize = (position + 1).into();
 	let next_character: char = title.nth(next_character_position).expect("Can't get next character !");
-
-	println!("next_character: {} {}/{}", next_character, next_character_position, length);
 	
 	if next_character_position <= length {
 		if next_character.is_whitespace() {
