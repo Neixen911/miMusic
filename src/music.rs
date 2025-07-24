@@ -1,14 +1,18 @@
+use id3::{Content, Tag, TagLike, Version};
+use regex::Regex;
+use rodio::{Decoder, Sink, source::EmptyCallback};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::str::Chars;
 use std::sync::Arc;
-use id3::{Tag, Content};
-use rodio::{Decoder, Sink, source::EmptyCallback};
+use std::sync::atomic::{AtomicU32, Ordering};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
 use walkdir::WalkDir;
+
+const OUTPUT_FILE_FORMAT: &str = "mp3";
 
 #[derive(Default, Debug)]
 pub struct Player {
@@ -62,17 +66,93 @@ pub async fn download_song(song_url: String) {
     let output_dir = PathBuf::from("songs");
 	
     let id_song = WalkDir::new(&output_dir).into_iter().count() - 1;
-	let filename = output_dir.join("song".to_owned() + &id_song.to_string() + ".%(ext)s");
+	let filename = output_dir.join("song".to_owned() + &id_song.to_string() + "." + OUTPUT_FILE_FORMAT);
+	let mut yt_music_song_url = song_url.replace("www.youtube.com", "music.youtube.com");
 
 	let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
-	let _status = binding.args([
+	let mut status = binding.args([
+		"--quiet", 
 		"--no-write-subs", 
 		"-x", 
-		"--audio-format", "mp3", 
+		"--audio-format", OUTPUT_FILE_FORMAT, 
 		"--add-metadata", 
 		"-o", filename.to_str().expect("Unable to convert to str"), 
-		&song_url, 
-	]).output().expect("Failed to downloading song !");
+		&yt_music_song_url, 
+	]).status().expect("Can't download song !");
+
+	if !status.success() {
+		yt_music_song_url = song_url.replace("music.youtube.com", "www.youtube.com");
+
+		binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
+		status = binding.args([
+			"--quiet", 
+			"--no-write-subs", 
+			"-x", 
+			"--audio-format", OUTPUT_FILE_FORMAT, 
+			"--add-metadata", 
+			"-o", filename.to_str().expect("Unable to convert to str"), 
+			&yt_music_song_url, 
+		]).status().expect("Can't download song !");
+	}
+
+	applying_metadata("songs/song".to_owned() + &id_song.to_string() + "." + OUTPUT_FILE_FORMAT);
+}
+
+// Applying new metadata to the file
+fn applying_metadata(filename: String) {
+	let file = File::open(&filename).expect("Unable to open file !");
+	let mut tag = Tag::read_from2(&file).expect("Unable to get tags from file !");
+
+	// Parsing tags
+	let mut new_title = tag.title().expect("Can't get title !").to_string();
+	let new_artist = tag.artist().expect("Can't get artist !").to_string();
+
+	if new_title.contains(&new_artist) {
+		new_title = new_title.replace(&new_artist, "");
+	}
+
+	// List of regex commons to remove
+	let list_regex = [ r"\(.*\)", r"\[.*\]", r".*-", r" feat.*", r"ft.*" ];
+	for regex in list_regex {
+		let regex_to_remove = Regex::new(regex).expect("Can't create Regex !");
+		new_title = regex_to_remove.replace_all(&new_title, "").to_string();
+	}
+
+	let mut position: u8 = 0;
+	let tmp = new_title.clone();
+	let new_title_iter = tmp.chars();
+
+	for character in new_title_iter {
+		if !character.is_ascii_alphabetic() && have_whitespace_after(&mut new_title.chars(), position) {
+			new_title = new_title.replace(character, " ");
+		}
+		position = position + 1;
+	}
+
+	let spaces_regex = Regex::new(r" {2,}").expect("Can't create Regex !");
+	new_title = spaces_regex.replace_all(&new_title, " ").to_string();
+
+	// Setting tags
+	tag.set_title(new_title.trim());
+	tag.set_artist(new_artist.trim());
+
+	tag.write_to_path(&filename, Version::Id3v24).expect("Can't write metadata to the file");
+}
+
+// Check if special character have whitespace it
+fn have_whitespace_after(title: &mut Chars<'_>, position: u8) -> bool {
+	let length: usize = title.clone().count() - 1;
+	let next_character_position: usize = (position + 1).into();
+	
+	if next_character_position <= length {
+		if title.nth(next_character_position).expect("Can't get next character !").is_whitespace() {
+			return true;
+		} else {
+			return false;
+		}
+	} else {
+		return false;
+	}
 }
 
 // Return all the songs with their tags

@@ -287,7 +287,7 @@ impl App {
         .split(download);
 
         let download_section = Block::default()
-            .title(Line::from("Now Playing"))
+            .title(Line::from("Download URL"))
             .borders(ratatui::widgets::Borders::ALL);
         frame.render_widget(download_section, download);
 
