@@ -112,7 +112,8 @@ fn applying_metadata(filename: String) {
 		new_title = new_title.replace(&new_artist, "");
 	}
 
-	let list_regex = [ r"\(.*\)", r"feat.*", r"ft.*" ];
+	// List of regex commons to remove
+	let list_regex = [ r"\(.*\)", r"\[.*\]", r".*-", r" feat.*", r"ft.*" ];
 	for regex in list_regex {
 		let regex_to_remove = Regex::new(regex).expect("Can't create Regex !");
 		new_title = regex_to_remove.replace_all(&new_title, "").to_string();
