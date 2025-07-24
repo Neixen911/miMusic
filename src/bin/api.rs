@@ -8,12 +8,16 @@ use std::process::Command;
 use std::str::Chars;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use id3::{Content, Tag, TagLike, Version};
 use regex::Regex;
 use rodio::{Decoder, OutputStreamBuilder, Sink, source::EmptyCallback};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
 use walkdir::WalkDir;
+
+const BASE_3_MIN_DOWNLOADING_TIME: u64 = 26;
+const MINUTE_SUPPLEMENTARY: f32 = 2.5;
 
 #[derive(Default, Debug)]
 struct Player {
@@ -37,27 +41,44 @@ fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 	add_signal_end_song(sink, player);
 }
 
-// Retrieve URL(s) song(s) from a unique URL
-fn retrieve_songs_urls_from(url: &str) -> Vec<String> {
+// Retrieve data(s) song(s) from a unique URL
+fn retrieve_songs_datas_from(url: &str) -> (Vec<String>, u64) {
     let libraries_dir = PathBuf::from("libs");
     let yt_dlp = libraries_dir.join("yt-dlp");
 
-    // Fetching song(s) URL(S)
+    // Fetching song(s) data(S)
     let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
     let status = binding.args([
         "--skip-download", 
         "--no-playlist", 
-        "--print", "%(webpage_url)s", 
+        "--print", "%(webpage_url)s %(duration)s", 
         url, 
-    ]).output().expect("Failed to fetching song(s) url(s) !");
+    ]).output().expect("Failed to fetching song(s) data(s) !");
 
     let json_data = String::from_utf8_lossy(&status.stdout);
     let urls: Vec<String> = json_data
-        .lines()
-        .map(|line| line.trim().to_string())
-        .collect();
+		.lines()
+		.filter_map(|line| line.split_whitespace().nth(0))
+		.map(|word| word.to_string())
+		.collect();
+	let durations: Vec<String> = json_data
+		.lines()
+		.filter_map(|line| line.split_whitespace().nth(1))
+		.map(|word| word.to_string())
+		.collect();
+	
+	// Estimate the duration of the downloading process
+	let mut estimated_downloading_durations: u64 = 0;
+	for duration in durations {
+		let min_song: f32 = duration.parse::<f32>().expect("Can't convert String to u64 !") / 60.0;
+		let mut estimated_downloading_duration: u64 = BASE_3_MIN_DOWNLOADING_TIME;
+		if min_song > 3.0 {
+			estimated_downloading_duration = estimated_downloading_duration + ((min_song - 3.0) * MINUTE_SUPPLEMENTARY).ceil() as u64;
+		}
+		estimated_downloading_durations = estimated_downloading_durations + estimated_downloading_duration;
+	}
 
-	urls
+	(urls, estimated_downloading_durations)
 }
 
 // Download song from a unique URL
@@ -71,7 +92,7 @@ fn download_song(song_url: String) {
 	let mut yt_music_song_url = song_url.replace("www.youtube.com", "music.youtube.com");
 
 	let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
-	let mut status = binding.args([
+	let status = binding.args([
 		"--quiet", 
 		"--no-write-subs", 
 		"-x", 
@@ -85,7 +106,7 @@ fn download_song(song_url: String) {
 		yt_music_song_url = song_url.replace("music.youtube.com", "www.youtube.com");
 
 		binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
-		status = binding.args([
+		binding.args([
 			"--quiet", 
 			"--no-write-subs", 
 			"-x", 
@@ -302,10 +323,15 @@ fn main() {
 				if args.remainder().is_some() {
 					while args.remainder().is_some() {
 						let based_url = args.next().expect("Unable to get url !");
-						let urls = retrieve_songs_urls_from(&based_url);
+						println!("Retrieving song(s) data(s) from YouTube URL ...");
+						let (urls, duration) = retrieve_songs_datas_from(&based_url);
+						println!("Estimated downloading time: {}s", duration);
+						let before_download = Instant::now();
 						for url in urls {
 							download_song(url);
 						}
+						let after_download = Instant::now();
+						println!("Total duration download: {:?}", after_download - before_download);
 					}
 				}
 			},
