@@ -33,6 +33,7 @@ pub struct App {
     playing_infos: Vec<String>,
     is_editing: bool,
     input_editing: String,
+    state_download: f64,
     all_songs: Vec<HashMap<String, String>>,
     is_running: bool,
 }
@@ -48,6 +49,7 @@ impl App {
         self.playing_infos = music::get_current_song_info(&sink, &mut self.player);
         self.is_editing = false;
         self.input_editing = "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string();
+        self.state_download = 0.0;
         self.all_songs = music::get_all_songs();
 
         let mut last_tick = Instant::now();
@@ -257,7 +259,7 @@ impl App {
         let mut ratio = 0.0;
         let (act_minutes, act_seconds) = Self::seconds_to_minsec(act_duration_song);
         let (max_minutes, max_seconds) = Self::seconds_to_minsec(max_duration_song);
-        let label = Span::styled(
+        let playing_label = Span::styled(
             format!("{:02}", act_minutes) 
             + ":" 
             + format!("{:02}", act_seconds).as_str() 
@@ -265,16 +267,16 @@ impl App {
             + format!("{:02}", max_minutes).as_str() 
             + ":" 
             + format!("{:02}", max_seconds).as_str(),
-            Style::default().fg(Color::Reset),
+            Style::default(),
         );
         if max_duration_song != 0.0 {
             ratio = act_duration_song / max_duration_song;
         }
-        let gauge_section = Gauge::default()
+        let playing_gauge_section = Gauge::default()
             .ratio(ratio)
             .gauge_style(Color::Magenta)
-            .label(label);
-        frame.render_widget(gauge_section, chunks[1]);
+            .label(playing_label);
+        frame.render_widget(playing_gauge_section, chunks[1]);
 
         // Download section
         let chunks = Layout::vertical([
@@ -283,14 +285,20 @@ impl App {
         .margin(1)
         .split(download);
 
-        let download_section = Block::default()
+        let downloading_section = Block::default()
             .title(Line::from("Download URL"))
             .borders(ratatui::widgets::Borders::ALL);
-        frame.render_widget(download_section, download);
+        frame.render_widget(downloading_section, download);
 
-        let input_url = Paragraph::new(self.input_editing.clone())
-            .style(Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC));
-        frame.render_widget(input_url, chunks[0]);
+        let downloading_label = Span::styled(
+            self.input_editing.clone(),
+            Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC),
+        );
+        let downloading_gauge_section = Gauge::default()
+            .ratio(self.state_download)
+            .gauge_style(Color::Magenta)
+            .label(downloading_label);
+        frame.render_widget(downloading_gauge_section, chunks[0]);
 
         // Songs section
         let mut songs_datas: Vec<Row> = Vec::new();
