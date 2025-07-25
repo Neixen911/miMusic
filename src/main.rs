@@ -45,34 +45,31 @@ impl App {
         self.player = music::Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
         let stream_handle = OutputStreamBuilder::open_default_stream().expect("Unable to get OutputStreamBuilder !");
         let sink = Sink::connect_new(stream_handle.mixer());
+        self.playing_infos = music::get_current_song_info(&sink, &mut self.player);
         self.is_editing = false;
         self.input_editing = "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string();
         self.all_songs = music::get_all_songs();
-        let tick_rate = Duration::from_millis(250);
+
         let mut last_tick = Instant::now();
-        self.on_tick(&sink);
 
         while self.is_running {
             // Draw TUI
             terminal.draw(|frame| self.draw(frame))?;
 
-            // Detect keys events
-            let timeout = tick_rate.saturating_sub(last_tick.elapsed());
+            // Do not wait keys events more than 0.25s after render TUI
+            let timeout = Duration::from_millis(250).saturating_sub(last_tick.elapsed());
             if event::poll(timeout)? {
                 self.handle_events(&sink)?;
-            }
-
-            // Loop to updated data
-            if last_tick.elapsed() >= tick_rate {
-                self.on_tick(&sink);
                 last_tick = Instant::now();
             }
+
+            self.update_datas(&sink);
         }
         Ok(())
     }
 
-    // Function to retrieve data from playing section
-    fn on_tick(&mut self, sink: &Sink) {
+    // Function to update all datas
+    fn update_datas(&mut self, sink: &Sink) {
         self.playing_infos = music::get_current_song_info(sink, &mut self.player);
     }
 
@@ -324,9 +321,9 @@ impl App {
         frame.render_stateful_widget(songs_table, songs, &mut self.state_table);
 
         // Hotkeys section
-        let mut hotkeys_text = "Move up <Up> - Move down <Down> - Play <Enter> - Play/Pause <Space> - Skip <Right> - Switch mode <Tab> - Quit <Q>";
+        let mut hotkeys_text = "Move up <Up> - Move down <Down> - Play <Enter> - Play/Pause <Space> - Skip <Right> - Download Mode <Tab> - Quit <Q>";
         if self.is_editing {
-            hotkeys_text = "Download <Enter> - Switch mode <Esc>";
+            hotkeys_text = "Download <Enter> - Songs Mode <Esc>";
         }
         let hotkeys_section = Block::default()
             .title(Line::from(hotkeys_text).centered());
