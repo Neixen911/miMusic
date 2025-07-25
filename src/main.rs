@@ -192,12 +192,13 @@ impl App {
     }
 
     fn download_songs_from_url(&mut self, url: String) {
-        let urls = tokio::spawn( async move {
-            music::retrieve_songs_urls_from(&url).await
+        let handle = tokio::spawn( async move {
+            music::retrieve_songs_datas_from(&url).await
         });
 
         tokio::spawn( async {
-            for song_url in urls.await.expect("Couldn't retrieve songs urls !") {
+            let (urls, duration) = handle.await.expect("Can't retrieve songs datas from YouTube URL downloaded !");
+            for song_url in urls {
                 music::download_song(song_url).await;
             }
         });
