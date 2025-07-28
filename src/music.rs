@@ -13,6 +13,8 @@ use symphonia::default::get_probe;
 use walkdir::WalkDir;
 
 const OUTPUT_FILE_FORMAT: &str = "mp3";
+const BASE_3_MIN_DOWNLOADING_TIME: f64 = 26.0;
+const MINUTE_SUPPLEMENTARY: f64 = 2.5;
 
 #[derive(Default, Debug)]
 pub struct Player {
@@ -36,27 +38,42 @@ pub fn add_song_to_queue(sink: &Sink, path: &str, player: &mut Player) {
 	add_signal_end_song(sink, player);
 }
 
-// Retrieve URL(s) song(s) from a unique URL
-pub async fn retrieve_songs_urls_from(url: &str) -> Vec<String> {
+// Retrieve URL(s) data(s) from a unique URL
+pub async fn retrieve_songs_datas_from(url: &str) -> (Vec<String>, f64) {
     let libraries_dir = PathBuf::from("libs");
     let yt_dlp = libraries_dir.join("yt-dlp");
 
-    // Fetching song(s) URL(S)
+    // Fetching song(s) data(S)
     let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
     let status = binding.args([
         "--skip-download", 
         "--no-playlist", 
-        "--print", "%(webpage_url)s", 
+        "--print", "%(webpage_url)s %(duration)s", 
         url, 
-    ]).output().expect("Failed to fetching song(s) url(s) !");
+    ]).output().expect("Failed to fetching song(s) data(s) !");
 
     let json_data = String::from_utf8_lossy(&status.stdout);
     let urls: Vec<String> = json_data
-        .lines()
-        .map(|line| line.trim().to_string())
-        .collect();
+		.lines()
+		.filter_map(|line| line.split_whitespace().nth(0))
+		.map(|word| word.to_string())
+		.collect();
+	let durations: Vec<String> = json_data
+		.lines()
+		.filter_map(|line| line.split_whitespace().nth(1))
+		.map(|word| word.to_string())
+		.collect();
+	let mut estimated_downloading_durations: f64 = 0.0;
+	for duration in durations {
+		let min_song: f64 = duration.parse::<f64>().expect("Can't convert String to f64 !") / 60.0;
+		let mut estimated_downloading_duration: f64 = BASE_3_MIN_DOWNLOADING_TIME;
+		if min_song > 3.0 {
+			estimated_downloading_duration = estimated_downloading_duration + ((min_song - 3.0) * MINUTE_SUPPLEMENTARY).ceil();
+		}
+		estimated_downloading_durations = estimated_downloading_durations + estimated_downloading_duration;
+	}
 
-	urls
+	(urls, estimated_downloading_durations)
 }
 
 // Download song from a unique URL
@@ -70,7 +87,7 @@ pub async fn download_song(song_url: String) {
 	let mut yt_music_song_url = song_url.replace("www.youtube.com", "music.youtube.com");
 
 	let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
-	let mut status = binding.args([
+	let status = binding.args([
 		"--quiet", 
 		"--no-write-subs", 
 		"-x", 
@@ -84,7 +101,7 @@ pub async fn download_song(song_url: String) {
 		yt_music_song_url = song_url.replace("music.youtube.com", "www.youtube.com");
 
 		binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
-		status = binding.args([
+		binding.args([
 			"--quiet", 
 			"--no-write-subs", 
 			"-x", 
