@@ -70,7 +70,6 @@ pub async fn retrieve_songs_datas_from(url: &str) -> (Vec<String>, f64) {
 		if min_song > 3.0 {
 			estimated_downloading_duration = estimated_downloading_duration + ((min_song - 3.0) * MINUTE_SUPPLEMENTARY).ceil();
 		}
-		//println!("{}", estimated_downloading_duration);
 		estimated_downloading_durations = estimated_downloading_durations + estimated_downloading_duration;
 	}
 
