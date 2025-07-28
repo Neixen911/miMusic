@@ -60,8 +60,8 @@ impl App {
 
             // Do not wait keys events more than 0.25s after render TUI
             let timeout = Duration::from_millis(250).saturating_sub(last_tick.elapsed());
-            if event::poll(timeout)? {
-                self.handle_events(&sink)?;
+            if event::poll(timeout).expect("Can't check if event::poll during timeout value !") {
+                self.handle_events(&sink);
                 last_tick = Instant::now();
             }
 
@@ -76,14 +76,13 @@ impl App {
     }
 
     // Retrieve keys events
-    fn handle_events(&mut self, sink: &Sink) -> io::Result<()> {
-        match event::read()? {
+    fn handle_events(&mut self, sink: &Sink) {
+        match event::read().expect("Can't read events !") {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event, sink)
+                self.handle_key_event(key_event, sink);
             }
             _ => {}
         };
-        Ok(())
     }
 
     // Match key event to dedicated function
