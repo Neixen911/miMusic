@@ -15,6 +15,7 @@ use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio;
+use tokio::sync::mpsc::{self, Receiver, Sender};
 
 mod music;
 
@@ -33,9 +34,9 @@ pub struct App {
     playing_infos: Vec<String>,
     is_editing: bool,
     input_editing: String,
-    start_downloading_timer: bool,
     total_downloading_time: f64,
     state_download: f64,
+    downloading_started: bool,
     all_songs: Vec<HashMap<String, String>>,
     is_running: bool,
 }
@@ -51,12 +52,14 @@ impl App {
         self.playing_infos = music::get_current_song_info(&sink, &mut self.player);
         self.is_editing = false;
         self.input_editing = "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string();
-        self.start_downloading_timer = false;
         self.state_download = 0.0;
+        self.downloading_started = false;
         self.all_songs = music::get_all_songs();
 
+        let (sender, mut receiver) = mpsc::channel(2);
+
         let mut tick_keys_events = Instant::now();
-        let time_downloading = Instant::now();
+        let mut time_downloading = Instant::now();
 
         while self.is_running {
             // Draw TUI
@@ -65,49 +68,52 @@ impl App {
             // Do not wait keys events more than 0.25s after render TUI
             let timeout = Duration::from_millis(250).saturating_sub(tick_keys_events.elapsed());
             if event::poll(timeout).expect("Can't check if event::poll during timeout value !") {
-                self.handle_events(&sink).await;
+                self.handle_events(&sink, sender.clone()).await;
                 tick_keys_events = Instant::now();
             }
 
-            self.update_datas(&sink, time_downloading);
+            self.update_datas(&sink, &mut time_downloading, &mut receiver).await;
         }
         Ok(())
     }
 
     // Function to update all datas
-    fn update_datas(&mut self, sink: &Sink, mut time_downloading: Instant) {
+    async fn update_datas(&mut self, sink: &Sink, time_downloading: &mut Instant, receiver: &mut Receiver<f64>) {
         self.playing_infos = music::get_current_song_info(sink, &mut self.player);
 
-        if self.total_downloading_time != 0.0 {
-            if self.start_downloading_timer == true {
-                time_downloading = Instant::now();
-                self.start_downloading_timer = false;
-            }
-            self.state_download = (time_downloading.elapsed().as_secs()) as f64 / self.total_downloading_time;
-
-            if self.state_download >= 1.0 {
-                self.total_downloading_time = 0.0;
-                self.state_download = 0.0;
-            }
+        if !receiver.is_empty() {
+            *time_downloading = Instant::now();
+            self.total_downloading_time = receiver.recv().await.expect("Can't retrieve estimated downloading duration value !");
+            self.input_editing = format!("Estimated downloading duration : {}s", self.total_downloading_time as u64);
+            self.downloading_started = true;
         }
+        if self.downloading_started == true {
+            self.state_download = time_downloading.elapsed().as_secs() as f64 / self.total_downloading_time;
+        }
+        if self.state_download >= 0.99 {
+            self.state_download = 0.0;
+            self.downloading_started = false;
+            self.input_editing = "Download successfull !".to_string();
+        }
+        
     }
 
     // Retrieve keys events
-    async fn handle_events(&mut self, sink: &Sink) {
+    async fn handle_events(&mut self, sink: &Sink, sender: Sender<f64>) {
         match event::read().expect("Can't read events !") {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event, sink).await;
+                self.handle_key_event(key_event, sink, sender).await;
             }
             _ => {}
         };
     }
 
     // Match key event to dedicated function
-    async fn handle_key_event(&mut self, key_event: KeyEvent, sink: &Sink) {
+    async fn handle_key_event(&mut self, key_event: KeyEvent, sink: &Sink, sender: Sender<f64>) {
         match self.is_editing {
             true => {
                 match key_event.code {
-                    KeyCode::Enter                  => { self.download_songs_from_url(self.input_editing.to_string()).await; },
+                    KeyCode::Enter                  => { self.download_songs_from_url(self.input_editing.to_string(), sender).await; },
                     KeyCode::Backspace              => { self.remove_char_from_input(); },
                     KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
                     KeyCode::Esc                    => { self.switch_mode(); },
@@ -207,17 +213,12 @@ impl App {
         self.input_editing.push_str(&new_char.to_string());
     }
 
-    async fn download_songs_from_url(&mut self, url: String) {
-        let handle = tokio::spawn( async move {
-            music::retrieve_songs_datas_from(&url).await
-        });
-
-        let (urls, duration) = handle.await.expect("Can't retrieve songs datas from YouTube URL downloaded !");
-        self.input_editing = format!("Started to fetch {} song(s). Total process time: {}s ...", urls.len(), duration);
-        self.total_downloading_time = duration;
-        self.start_downloading_timer = true;
-
-        tokio::spawn( async {
+    async fn download_songs_from_url(&mut self, url: String, sender: Sender<f64>) {
+        tokio::spawn( async move {
+            let (urls, duration) = music::retrieve_songs_datas_from(&url).await;
+            if let Err(e) = sender.send(duration).await {
+                println!("Erreur: {}", e);
+            }
             for song_url in urls {
                 music::download_song(song_url).await;
             }
