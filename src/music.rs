@@ -13,7 +13,7 @@ use symphonia::default::get_probe;
 use walkdir::WalkDir;
 
 const OUTPUT_FILE_FORMAT: &str = "mp3";
-const BASE_3_MIN_DOWNLOADING_TIME: f64 = 26.0;
+const BASE_3_MIN_DOWNLOADING_TIME: f64 = 30.0;
 const MINUTE_SUPPLEMENTARY: f64 = 2.5;
 
 #[derive(Default, Debug)]
@@ -179,7 +179,9 @@ pub fn get_all_songs() -> Vec<HashMap<String, String>> {
 
 	for song_path in songs_path {
 		let song_infos = get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
-		songs.push(song_infos);
+		if song_infos.get("is_song").expect("Can't get is_song variable !") == "true" {
+			songs.push(song_infos);
+		}
 	}
 
 	songs
@@ -236,42 +238,46 @@ pub fn get_current_song_info(sink: &Sink, player: &mut Player) -> Vec<String> {
 // Return infos from song file
 pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 	let file = File::open(path).expect("Unable to open file !");
-	let tag = Tag::read_from2(&file).expect("Unable to get tags from file !");
 	let mut song_infos = HashMap::new();
-	// Default datas
-	song_infos.insert(String::from("path"), "songs/song.mp3".to_string());
-	song_infos.insert(String::from("title"), "Unknown".to_string());
-	song_infos.insert(String::from("artist"), "Unknown".to_string());
-	song_infos.insert(String::from("duration"), "0".to_string());
-	
-	song_infos.insert(String::from("path"), path.to_string());
-	
-	for frame in tag.frames() {
-		let id = frame.id();
-	
-		match frame.content() {
-			Content::Text(value) => {
-				match id {
-					"TIT2" => {
-						song_infos.insert(String::from("title"), value.to_string());
-					}
-					"TPE1" => {
-						song_infos.insert(String::from("artist"), value.to_string());
-					}
+	let mut is_song = false;
+	if let Ok(tag) = Tag::read_from2(&file) {
+		is_song = true;
+		// Default datas
+		song_infos.insert(String::from("path"), "songs/song.mp3".to_string());
+		song_infos.insert(String::from("title"), "Unknown".to_string());
+		song_infos.insert(String::from("artist"), "Unknown".to_string());
+		song_infos.insert(String::from("duration"), "0".to_string());
+		
+		song_infos.insert(String::from("path"), path.to_string());
+		
+		for frame in tag.frames() {
+			let id = frame.id();
+		
+			match frame.content() {
+				Content::Text(value) => {
+					match id {
+						"TIT2" => {
+							song_infos.insert(String::from("title"), value.to_string());
+						}
+						"TPE1" => {
+							song_infos.insert(String::from("artist"), value.to_string());
+						}
 
-					_default => {
-						continue;
+						_default => {
+							continue;
+						}
 					}
 				}
-			}
-			_content => {
-				continue;
+				_content => {
+					continue;
+				}
 			}
 		}
-	}
 
-	let seconds = get_audio_duration(path);
-	song_infos.insert(String::from("duration"), seconds.to_string());
+		let seconds = get_audio_duration(path);
+		song_infos.insert(String::from("duration"), seconds.to_string());
+	}
+	song_infos.insert(String::from("is_song"), is_song.to_string());
 
 	song_infos
 }

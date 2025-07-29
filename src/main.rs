@@ -79,12 +79,14 @@ impl App {
 
     // Function to update all datas
     async fn update_datas(&mut self, sink: &Sink, time_downloading: &mut Instant, receiver: &mut Receiver<f64>) {
+        // Update data in playing section
         self.playing_infos = music::get_current_song_info(sink, &mut self.player);
 
+        // Update progress bar during downloading song(s)
         if !receiver.is_empty() {
             *time_downloading = Instant::now();
             self.total_downloading_time = receiver.recv().await.expect("Can't retrieve estimated downloading duration value !");
-            self.input_editing = format!("Estimated downloading duration : {}s", self.total_downloading_time as u64);
+            self.input_editing = format!("Estimated total downloading duration : {}s", self.total_downloading_time as u64);
             self.downloading_started = true;
         }
         if self.downloading_started == true {
@@ -96,6 +98,8 @@ impl App {
             self.input_editing = "Download successfull !".to_string();
         }
         
+        // Update all songs if new ones appears
+        self.all_songs = music::get_all_songs();
     }
 
     // Retrieve keys events
@@ -214,11 +218,10 @@ impl App {
     }
 
     async fn download_songs_from_url(&mut self, url: String, sender: Sender<f64>) {
+        self.input_editing = "Starting to fetch datas from YouTube URL ...".to_string();
         tokio::spawn( async move {
             let (urls, duration) = music::retrieve_songs_datas_from(&url).await;
-            if let Err(e) = sender.send(duration).await {
-                println!("Erreur: {}", e);
-            }
+            sender.send(duration).await.expect("Can't send estimated downloading time value !");
             for song_url in urls {
                 music::download_song(song_url).await;
             }
