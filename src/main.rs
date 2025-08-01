@@ -58,7 +58,8 @@ impl App {
 
         let (sender, mut receiver) = mpsc::channel(2);
 
-        let mut tick_keys_events = Instant::now();
+        let tick_rate = Duration::from_millis(250);
+        let mut tick_time_elapsed = Instant::now();
         let mut time_downloading = Instant::now();
 
         while self.is_running {
@@ -66,13 +67,16 @@ impl App {
             terminal.draw(|frame| self.draw(frame))?;
 
             // Do not wait keys events more than 0.25s after render TUI
-            let timeout = Duration::from_millis(250).saturating_sub(tick_keys_events.elapsed());
+            let timeout = tick_rate.saturating_sub(tick_time_elapsed.elapsed());
             if event::poll(timeout).expect("Can't check if event::poll during timeout value !") {
                 self.handle_events(&sink, sender.clone()).await;
-                tick_keys_events = Instant::now();
             }
 
-            self.update_datas(&sink, &mut time_downloading, &mut receiver).await;
+            // Update datas each 0.25s (not each frame bc it makes 10x CPU usage)
+            if tick_time_elapsed.elapsed() >= tick_rate {
+                self.update_datas(&sink, &mut time_downloading, &mut receiver).await;
+                tick_time_elapsed = Instant::now();
+            }
         }
         Ok(())
     }
