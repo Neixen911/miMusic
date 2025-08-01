@@ -31,9 +31,9 @@ By building miMusic entirely in Rust, we aim to maximize both security and perfo
 
 - [x] Lightweight audio playback
 - [x] Terminal-based UI (TUI)
-- [x] Raspberry Pi optimized
+- [x] Built for embedded systems
 - [x] Fast, responsive, and resource-efficient
-- [x] Built with safety and performance in mind
+- [x] Async downloading processus
 
 ------------------------------------
 
@@ -42,8 +42,6 @@ By building miMusic entirely in Rust, we aim to maximize both security and perfo
 - [ ] Audio waveform
 - [ ] More ID3 tags
 - [ ] Unique playback for one device
-- [ ] Download song from TUI
-- [ ] Upgrade style
 
 ------------------------------------
 
