@@ -208,6 +208,7 @@ impl App {
                 self.is_editing = false;
             }
             false => {
+                self.input_editing = "".to_string();
                 self.is_editing = true;
             }
         }

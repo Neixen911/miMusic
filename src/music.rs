@@ -84,33 +84,17 @@ pub async fn download_song(song_url: String) {
 	
     let id_song = WalkDir::new(&output_dir).into_iter().count() - 1;
 	let filename = output_dir.join("song".to_owned() + &id_song.to_string() + "." + OUTPUT_FILE_FORMAT);
-	let mut yt_music_song_url = song_url.replace("www.youtube.com", "music.youtube.com");
 
 	let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
-	let status = binding.args([
+	let _status = binding.args([
 		"--quiet", 
 		"--no-write-subs", 
 		"-x", 
 		"--audio-format", OUTPUT_FILE_FORMAT, 
 		"--add-metadata", 
 		"-o", filename.to_str().expect("Unable to convert to str"), 
-		&yt_music_song_url, 
+		&song_url, 
 	]).status().expect("Can't download song !");
-
-	if !status.success() {
-		yt_music_song_url = song_url.replace("music.youtube.com", "www.youtube.com");
-
-		binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
-		binding.args([
-			"--quiet", 
-			"--no-write-subs", 
-			"-x", 
-			"--audio-format", OUTPUT_FILE_FORMAT, 
-			"--add-metadata", 
-			"-o", filename.to_str().expect("Unable to convert to str"), 
-			&yt_music_song_url, 
-		]).status().expect("Can't download song !");
-	}
 
 	applying_metadata("songs/song".to_owned() + &id_song.to_string() + "." + OUTPUT_FILE_FORMAT);
 }
@@ -129,7 +113,7 @@ fn applying_metadata(filename: String) {
 	}
 
 	// List of regex commons to remove
-	let list_regex = [ r"\(.*\)", r"\[.*\]", r".*-", r" feat.*", r"ft.*" ];
+	let list_regex = [ r"\(.*\)", r"\[.*\]", r".*「", r"」.*", r".*-", r" feat.*", r"ft.*" ];
 	for regex in list_regex {
 		let regex_to_remove = Regex::new(regex).expect("Can't create Regex !");
 		new_title = regex_to_remove.replace_all(&new_title, "").to_string();
@@ -140,7 +124,7 @@ fn applying_metadata(filename: String) {
 	let new_title_iter = tmp.chars();
 
 	for character in new_title_iter {
-		if !character.is_ascii_alphabetic() && have_whitespace_after(&mut new_title.chars(), position) {
+		if !character.is_alphabetic() && have_whitespace_after(&mut new_title.chars(), position) {
 			new_title = new_title.replace(character, " ");
 		}
 		position = position + 1;
