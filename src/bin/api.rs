@@ -167,7 +167,7 @@ impl Player {
 		let songs_path = fs::read_dir("songs").expect("Unable to find songs folder !");
 
 		for song_path in songs_path {
-			let song_infos = get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
+			let song_infos = self.get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
 			if song_infos.get("is_song").expect("Can't get is_song variable !") == "true" {
 				songs.push(song_infos);
 			}
