@@ -1,5 +1,8 @@
 #![feature(str_split_remainder)]
 
+mod music;
+
+use music::Player;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Layout},
@@ -17,20 +20,36 @@ use std::time::{Duration, Instant};
 use tokio;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
-mod music;
-
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
-    let app_result = App::default().run(&mut terminal).await;
+    let mut stream_handle = OutputStreamBuilder::open_default_stream().expect("Unable to get OutputStreamBuilder !");
+    stream_handle.log_on_drop(false);
+    let mut app = App {
+        state_table: TableState::default().with_selected(0),
+        player: Player::new(
+            Sink::connect_new(stream_handle.mixer()), 
+            Vec::new(), 
+            Arc::new(AtomicU32::new(0))
+        ),
+        playing_infos: Vec::new(),
+        is_editing: false,
+        input_editing: "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string(),
+        total_downloading_time: 0.0,
+        state_download: 0.0,
+        downloading_started: false,
+        all_songs: Vec::new(),
+        is_running: false,
+    };
+    let running_app = app.run(&mut terminal).await;
     ratatui::restore();
-    app_result
+    running_app
 }
 
-#[derive(Debug, Default)]
 pub struct App {
+    // Reorganise & reduce this variables (is_running at the end, some variables can maybe get out ...)
     state_table: TableState,
-    player: music::Player,
+    player: Player,
     playing_infos: Vec<String>,
     is_editing: bool,
     input_editing: String,
@@ -43,18 +62,9 @@ pub struct App {
 
 impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        // Initialisation of App's variables
         self.is_running = true;
-        self.state_table = TableState::default().with_selected(0);
-        self.player = music::Player { m_song_infos: Vec::new(), end_of_song_signal: Arc::new(AtomicU32::new(0)) };
-        let stream_handle = OutputStreamBuilder::open_default_stream().expect("Unable to get OutputStreamBuilder !");
-        let sink = Sink::connect_new(stream_handle.mixer());
-        self.playing_infos = music::get_current_song_info(&sink, &mut self.player);
-        self.is_editing = false;
-        self.input_editing = "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string();
-        self.state_download = 0.0;
-        self.downloading_started = false;
-        self.all_songs = music::get_all_songs();
+        self.playing_infos = self.player.get_current_song_info();
+        self.all_songs = self.player.get_all_songs();
 
         let (sender, mut receiver) = mpsc::channel(2);
 
@@ -69,12 +79,12 @@ impl App {
             // Do not wait keys events more than 0.25s after render TUI
             let timeout = tick_rate.saturating_sub(tick_time_elapsed.elapsed());
             if event::poll(timeout).expect("Can't check if event::poll during timeout value !") {
-                self.handle_events(&sink, sender.clone()).await;
+                self.handle_events(sender.clone()).await;
             }
 
             // Update datas each 0.25s (not each frame bc it makes 10x CPU usage)
             if tick_time_elapsed.elapsed() >= tick_rate {
-                self.update_datas(&sink, &mut time_downloading, &mut receiver).await;
+                self.update_datas(&mut time_downloading, &mut receiver).await;
                 tick_time_elapsed = Instant::now();
             }
         }
@@ -82,9 +92,9 @@ impl App {
     }
 
     // Function to update all datas
-    async fn update_datas(&mut self, sink: &Sink, time_downloading: &mut Instant, receiver: &mut Receiver<f64>) {
+    async fn update_datas(&mut self, time_downloading: &mut Instant, receiver: &mut Receiver<f64>) {
         // Update data in playing section
-        self.playing_infos = music::get_current_song_info(sink, &mut self.player);
+        self.playing_infos = self.player.get_current_song_info();
 
         // Update progress bar during downloading song(s)
         if !receiver.is_empty() {
@@ -103,21 +113,21 @@ impl App {
         }
         
         // Update all songs if new ones appears
-        self.all_songs = music::get_all_songs();
+        self.all_songs = self.player.get_all_songs();
     }
 
     // Retrieve keys events
-    async fn handle_events(&mut self, sink: &Sink, sender: Sender<f64>) {
+    async fn handle_events(&mut self, sender: Sender<f64>) {
         match event::read().expect("Can't read events !") {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event, sink, sender).await;
+                self.handle_key_event(key_event, sender).await;
             }
             _ => {}
         };
     }
 
     // Match key event to dedicated function
-    async fn handle_key_event(&mut self, key_event: KeyEvent, sink: &Sink, sender: Sender<f64>) {
+    async fn handle_key_event(&mut self, key_event: KeyEvent, sender: Sender<f64>) {
         match self.is_editing {
             true => {
                 match key_event.code {
@@ -132,11 +142,11 @@ impl App {
             false => {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
-                    KeyCode::Enter                  => { self.add_song_to_queue(sink); },
+                    KeyCode::Enter                  => { self.add_song_to_queue(); },
                     KeyCode::Up                     => { self.previous_song(); },
                     KeyCode::Down                   => { self.next_song(); },
-                    KeyCode::Right                  => { self.skip_song(sink); },
-                    KeyCode::Char(' ')              => { self.pause_play_song(sink); },
+                    KeyCode::Right                  => { self.skip_song(); },
+                    KeyCode::Char(' ')              => { self.pause_play_song(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
@@ -145,7 +155,7 @@ impl App {
     }
 
     // Add song to the queue on key pressed
-    fn add_song_to_queue(&mut self, sink: &Sink) {
+    fn add_song_to_queue(&mut self) {
         let i = match self.state_table.selected() {
             Some(i) => {
                 i
@@ -154,8 +164,7 @@ impl App {
         };
         let path = self.all_songs[i].get("path");
         let path = path.as_deref().expect("Unable to make the varibale as ownership !");
-        self.player.m_song_infos.push(music::get_song_infos_from_file(&path)); // Remove pub function (if possible), access it only via the player
-        music::add_song_to_queue(sink, &path, &mut self.player);
+        self.player.add_song_to_queue(&path);
     }
 
     // Select previous song in table on key pressed
@@ -189,17 +198,17 @@ impl App {
     }
 
     // Skip playing song on key pressed
-    fn skip_song(&mut self, sink: &Sink) {
-        if sink.len() > 0 {
-            sink.skip_one();
+    fn skip_song(&mut self) {
+        if !self.player.empty() {
+            self.player.skip_one();
         }
     }
 
     // Play/Pause song on key pressed
-    fn pause_play_song(&mut self, sink: &Sink) {
-        if !sink.is_paused() {
-            sink.pause();
-        } else { sink.play(); }
+    fn pause_play_song(&mut self) {
+        if !self.player.is_paused() {
+            self.player.pause();
+        } else { self.player.play(); }
     }
 
     fn switch_mode(&mut self) {

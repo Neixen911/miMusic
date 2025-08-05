@@ -116,42 +116,47 @@ impl Player {
 	// Return infos from song file
 	fn get_song_infos_from_file(&mut self, path: &str) -> HashMap<String, String> {
 		let file = File::open(path).expect("Unable to open file !");
-		let tag = Tag::read_from2(&file).expect("Unable to get tags from file !");
 		let mut song_infos = HashMap::new();
-		// Default datas
-		song_infos.insert(String::from("path"), "songs/song.mp3".to_string());
-		song_infos.insert(String::from("title"), "Unknown".to_string());
-		song_infos.insert(String::from("artist"), "Unknown".to_string());
-		song_infos.insert(String::from("duration"), "0".to_string());
-		
-		song_infos.insert(String::from("path"), path.to_string());
-		
-		for frame in tag.frames() {
-			let id = frame.id();
-		
-			match frame.content() {
-				Content::Text(value) => {
-					match id {
-						"TIT2" => {
-							song_infos.insert(String::from("title"), value.to_string());
-						}
-						"TPE1" => {
-							song_infos.insert(String::from("artist"), value.to_string());
-						}
+		let mut is_song = false;
 
-						_default => {
-							continue;
+		if let Ok(tag) = Tag::read_from2(&file) {
+			is_song = true;
+
+			// Default datas
+			song_infos.insert(String::from("path"), "songs/song.mp3".to_string());
+			song_infos.insert(String::from("title"), "Unknown".to_string());
+			song_infos.insert(String::from("artist"), "Unknown".to_string());
+			song_infos.insert(String::from("duration"), "0".to_string());
+			song_infos.insert(String::from("path"), path.to_string());
+			
+			for frame in tag.frames() {
+				let id = frame.id();
+			
+				match frame.content() {
+					Content::Text(value) => {
+						match id {
+							"TIT2" => {
+								song_infos.insert(String::from("title"), value.to_string());
+							}
+							"TPE1" => {
+								song_infos.insert(String::from("artist"), value.to_string());
+							}
+
+							_default => {
+								continue;
+							}
 						}
 					}
-				}
-				_content => {
-					continue;
+					_content => {
+						continue;
+					}
 				}
 			}
-		}
 
-		let seconds = self.get_audio_duration(path);
-		song_infos.insert(String::from("duration"), seconds.to_string());
+			let seconds = self.get_audio_duration(path);
+			song_infos.insert(String::from("duration"), seconds.to_string());
+		}
+		song_infos.insert(String::from("is_song"), is_song.to_string());
 
 		song_infos
 	}
@@ -162,8 +167,10 @@ impl Player {
 		let songs_path = fs::read_dir("songs").expect("Unable to find songs folder !");
 
 		for song_path in songs_path {
-			let song_infos = self.get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
-			songs.push(song_infos);
+			let song_infos = get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
+			if song_infos.get("is_song").expect("Can't get is_song variable !") == "true" {
+				songs.push(song_infos);
+			}
 		}
 
 		songs
