@@ -42,6 +42,7 @@ By building miMusic entirely in Rust, we aim to maximize both security and perfo
 - [ ] Audio waveform
 - [ ] More ID3 tags
 - [ ] Unique playback for one device
+- [ ] Non-regression tests
 
 ------------------------------------
 
