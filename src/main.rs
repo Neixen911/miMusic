@@ -6,9 +6,10 @@ use music::Player;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Layout},
+    prelude::{Alignment},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Gauge, Paragraph, Row, Table, TableState},
+    widgets::{Block, Cell, Gauge, List, ListState, Paragraph, Row, Table, TableState},
     DefaultTerminal, Frame,
 };
 use rodio::{OutputStreamBuilder, Sink};
@@ -66,7 +67,7 @@ impl App {
         self.playing_infos = self.player.get_current_song_info();
         self.all_songs = self.player.get_all_songs();
 
-        let (sender, mut receiver) = mpsc::channel(2);
+        let (sender, mut receiver) = mpsc::channel(1);
 
         let tick_rate = Duration::from_millis(250);
         let mut tick_time_elapsed = Instant::now();
@@ -146,6 +147,7 @@ impl App {
                     KeyCode::Up                     => { self.previous_song(); },
                     KeyCode::Down                   => { self.next_song(); },
                     KeyCode::Right                  => { self.skip_song(); },
+                    KeyCode::Left                   => { self.set_favorites(); },
                     KeyCode::Char(' ')              => { self.pause_play_song(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
@@ -223,6 +225,18 @@ impl App {
         }
     }
 
+    fn set_favorites(&mut self) {
+        let i = match self.state_table.selected() {
+            Some(i) => {
+                i
+            }
+            None => 0,
+        };
+        let path = self.all_songs[i].get("path");
+        let path = path.as_deref().expect("Unable to make the varibale as ownership !");
+        self.player.set_favorites(&path);
+    }
+
     fn remove_char_from_input(&mut self) {
         self.input_editing.pop();
     }
@@ -256,10 +270,10 @@ impl App {
             Constraint::Length(1),              // Application section
             Constraint::Length(5),              // Playing section
             Constraint::Length(3),              // Download section
-            Constraint::Fill(1),                // Songs section
+            Constraint::Fill(1),                // Playlists/Songs section
             Constraint::Length(1),              // Hotkeys section
         ]).margin(3);
-        let [app, playing, download, songs, hotkeys] = vertical.areas(frame.area());
+        let [app, playing, download, playlists_songs, hotkeys] = vertical.areas(frame.area());
 
         // Application section
         let app_text = Block::default()
@@ -330,7 +344,7 @@ impl App {
         frame.render_widget(downloading_section, download);
 
         let downloading_label = Span::styled(
-            self.input_editing.clone(),
+            &self.input_editing,
             Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC),
         );
         let downloading_gauge_section = Gauge::default()
@@ -338,6 +352,25 @@ impl App {
             .gauge_style(Color::Magenta)
             .label(downloading_label);
         frame.render_widget(downloading_gauge_section, chunks[0]);
+
+        // Playlists & Songs section
+        let horizontal = Layout::horizontal([
+            Constraint::Fill(1),              // Playlists section
+            Constraint::Fill(4),              // Songs section
+        ]);
+        let [playlists, songs] = horizontal.areas(playlists_songs);
+
+        // Playlists section
+        let mut playlist_state = ListState::default();
+        let items = ["Favorites"];
+        let playlists_section = List::new(items)
+            .block(
+                Block::default()
+                .title(Line::from("Playlists"))
+                .borders(ratatui::widgets::Borders::ALL)
+            )
+            .highlight_symbol(" █ ");
+        frame.render_stateful_widget(playlists_section, playlists, &mut playlist_state);
 
         // Songs section
         let mut songs_datas: Vec<Row> = Vec::new();
@@ -349,19 +382,26 @@ impl App {
                 .expect("Unable to convert into f64 !"));
             let duration = format!("{:02}", min) + ":" + format!("{:02}", sec).as_str();
             songs_datas.push(Row::new(vec![
-                song.get("title").expect("Unable to get title from song !").to_string(),
-                song.get("artist").expect("Unable to get artist from song !").to_string(),
-                duration,
+                Cell::from(Text::from(song.get("title").expect("Unable to get title from song !").to_string())),
+                Cell::from(Text::from(song.get("artist").expect("Unable to get artist from song !").to_string())),
+                Cell::from(Text::from(duration)),
+                Cell::from(Text::from(song.get("is_favorite").expect("Unable to get is_favorite from song !").to_string()).alignment(Alignment::Center)),
             ]));
         }
-        let header = Row::new(vec!["Title", "Artist", "Duration"]);
+        let header = Row::new(vec!["Title", "Artist", "Duration", ""]);
         let songs_table = Table::new(
             songs_datas,
             [
-                Constraint::Length(80),
-                Constraint::Length(30),
-                Constraint::Length(10),
+                Constraint::Fill(2),
+                Constraint::Fill(1),
+                Constraint::Max(10),
+                Constraint::Max(10),
             ])
+            .block(
+                Block::default()
+                .title(Line::from("All songs"))
+                .borders(ratatui::widgets::Borders::ALL)
+            )
             .header(header)
             .row_highlight_style(Style::default().fg(Color::Magenta))
             .highlight_symbol(Text::from(vec![" █ ".into()]));

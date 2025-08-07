@@ -1,8 +1,9 @@
 #![feature(str_split_remainder)]
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::{self};
+use std::fs::{self, File, read_to_string};
+use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use std::str::Chars;
@@ -23,6 +24,12 @@ struct Player {
 	sink: Sink,
     songs_queue: Vec<HashMap<String, String>>,
 	end_of_song_signal: Arc<AtomicU32>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct Playlist {
+	playlist_name: String,
+    songs_list: Vec<String>,
 }
 
 impl Player {
@@ -128,6 +135,7 @@ impl Player {
 			song_infos.insert(String::from("artist"), "Unknown".to_string());
 			song_infos.insert(String::from("duration"), "0".to_string());
 			song_infos.insert(String::from("path"), path.to_string());
+			song_infos.insert(String::from("is_favorite"), "♡".to_string());
 			
 			for frame in tag.frames() {
 				let id = frame.id();
@@ -155,10 +163,36 @@ impl Player {
 
 			let seconds = self.get_audio_duration(path);
 			song_infos.insert(String::from("duration"), seconds.to_string());
+
+			let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+			let favorites: Playlist = serde_json::from_str(&playlists_content)
+				.expect("Playlists JSON content is not well-formatted !");
+			if favorites.songs_list.contains(&path.to_string()) {
+				song_infos.insert(String::from("is_favorite"), "♥".to_string());
+			}
 		}
 		song_infos.insert(String::from("is_song"), is_song.to_string());
 
 		song_infos
+	}
+
+	fn set_favorites(&mut self, path: &str) {
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let mut favorites: Playlist = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+		if favorites.songs_list.contains(&path.to_string()) {
+			// Delete song from 'Favorites' playlist
+			let position = favorites.songs_list.iter().position(|n| n == &path.to_string()).expect("Cant get position of path into JSON file !");
+			favorites.songs_list.swap_remove(position);
+		} else {
+			// Add song to 'Favorites' playlist
+			favorites.songs_list.push(path.to_string());
+		}
+
+		let today_file = File::create("playlists.json").expect("Failed to create today.json");
+		let mut today_writer = BufWriter::new(today_file);
+		let _ = serde_json::to_writer(&mut today_writer, &favorites);
+		let _ = today_writer.flush();
 	}
 
 	// Return all the songs with their tags
@@ -350,20 +384,25 @@ fn main() {
 			},
 
 			"download" => {
-				if args.remainder().is_some() {
-					while args.remainder().is_some() {
-						let based_url = args.next().expect("Unable to get url !");
-						let (urls, duration) = retrieve_songs_datas_from(&based_url);
-						println!("Estimated downloading time: {}s", duration);
-						let before_download = Instant::now();
-						for url in urls {
-							download_song(url);
-						}
-						let after_download = Instant::now();
-						println!("Total duration download: {:?}", after_download - before_download);
+				while args.remainder().is_some() {
+					let based_url = args.next().expect("Unable to get url !");
+					let (urls, duration) = retrieve_songs_datas_from(&based_url);
+					println!("Estimated downloading time: {}s", duration);
+					let before_download = Instant::now();
+					for url in urls {
+						download_song(url);
 					}
+					let after_download = Instant::now();
+					println!("Total duration download: {:?}", after_download - before_download);
 				}
 			},
+
+			"favorites" => {
+				while args.remainder().is_some() {
+					let path = args.next().expect("Unable to get song path !");
+					player.set_favorites(&path);
+				}
+			}
 
 			"list" => {
 				println!("{:?}", player.get_all_songs());
