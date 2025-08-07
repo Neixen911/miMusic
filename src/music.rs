@@ -10,7 +10,6 @@ use std::process::Command;
 use std::str::Chars;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use serde_json::{Value, json};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
 use walkdir::WalkDir;

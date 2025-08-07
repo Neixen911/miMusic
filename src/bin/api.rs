@@ -1,7 +1,8 @@
 #![feature(str_split_remainder)]
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{self, File};
+use std::fs::{self, File, read_to_string};
 use std::io::{self};
 use std::path::PathBuf;
 use std::process::Command;
@@ -23,6 +24,12 @@ struct Player {
 	sink: Sink,
     songs_queue: Vec<HashMap<String, String>>,
 	end_of_song_signal: Arc<AtomicU32>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct Playlist {
+	playlist_name: String,
+    songs_list: Vec<String>,
 }
 
 impl Player {
@@ -128,6 +135,7 @@ impl Player {
 			song_infos.insert(String::from("artist"), "Unknown".to_string());
 			song_infos.insert(String::from("duration"), "0".to_string());
 			song_infos.insert(String::from("path"), path.to_string());
+			song_infos.insert(String::from("is_favorite"), "♡".to_string());
 			
 			for frame in tag.frames() {
 				let id = frame.id();
@@ -155,6 +163,13 @@ impl Player {
 
 			let seconds = self.get_audio_duration(path);
 			song_infos.insert(String::from("duration"), seconds.to_string());
+
+			let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+			let favorites: Playlist = serde_json::from_str(&playlists_content)
+				.expect("Playlists JSON content is not well-formatted !");
+			if favorites.songs_list.contains(&path.to_string()) {
+				song_infos.insert(String::from("is_favorite"), "♥".to_string());
+			}
 		}
 		song_infos.insert(String::from("is_song"), is_song.to_string());
 
