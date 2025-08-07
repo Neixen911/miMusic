@@ -1,13 +1,16 @@
 use id3::{Content, Tag, TagLike, Version};
 use regex::Regex;
 use rodio::{Decoder, Sink, source::EmptyCallback};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{self, File};
+use std::fs::{self, File, read_to_string};
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use std::str::Chars;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use serde_json::{Value, json};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
 use walkdir::WalkDir;
@@ -20,6 +23,12 @@ pub struct Player {
 	pub sink: Sink,
     pub songs_queue: Vec<HashMap<String, String>>,
 	pub end_of_song_signal: Arc<AtomicU32>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct Playlist {
+	playlist_name: String,
+    songs_list: Vec<String>,
 }
 
 impl Player {
@@ -138,6 +147,8 @@ impl Player {
 			song_infos.insert(String::from("title"), "Unknown".to_string());
 			song_infos.insert(String::from("artist"), "Unknown".to_string());
 			song_infos.insert(String::from("duration"), "0".to_string());
+			song_infos.insert(String::from("path"), path.to_string());
+			song_infos.insert(String::from("is_favorite"), "♡".to_string());
 			
 			for frame in tag.frames() {
 				let id = frame.id();
@@ -165,10 +176,36 @@ impl Player {
 
 			let seconds = self.get_audio_duration(path);
 			song_infos.insert(String::from("duration"), seconds.to_string());
+
+			let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+			let favorites: Playlist = serde_json::from_str(&playlists_content)
+				.expect("Playlists JSON content is not well-formatted !");
+			if favorites.songs_list.contains(&path.to_string()) {
+				song_infos.insert(String::from("is_favorite"), "♥".to_string());
+			}
 		}
 		song_infos.insert(String::from("is_song"), is_song.to_string());
 
 		song_infos
+	}
+
+	pub fn set_favorites(&mut self, path: &str) {
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let mut favorites: Playlist = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+		if favorites.songs_list.contains(&path.to_string()) {
+			// Delete song from 'Favorites' playlist
+			let position = favorites.songs_list.iter().position(|n| n == &path.to_string()).expect("Cant get position of path into JSON file !");
+			favorites.songs_list.swap_remove(position);
+		} else {
+			// Add song to 'Favorites' playlist
+			favorites.songs_list.push(path.to_string());
+		}
+
+		let today_file = File::create("playlists.json").expect("Failed to create today.json");
+		let mut today_writer = BufWriter::new(today_file);
+		let _ = serde_json::to_writer(&mut today_writer, &favorites);
+		let _ = today_writer.flush();
 	}
 
 	// Return all the songs with their tags
