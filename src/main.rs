@@ -9,7 +9,7 @@ use ratatui::{
     prelude::{Alignment},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Cell, Gauge, List, ListState, Paragraph, Row, Table, TableState},
+    widgets::{Block, Cell, Gauge, Paragraph, Row, Table, TableState},
     DefaultTerminal, Frame,
 };
 use rodio::{OutputStreamBuilder, Sink};
@@ -27,19 +27,22 @@ async fn main() -> io::Result<()> {
     let mut stream_handle = OutputStreamBuilder::open_default_stream().expect("Unable to get OutputStreamBuilder !");
     stream_handle.log_on_drop(false);
     let mut app = App {
-        state_table: TableState::default().with_selected(0),
+        songs_state: TableState::default().with_selected(0),
+        playlists_state: TableState::default().with_selected(0),
         player: Player::new(
             Sink::connect_new(stream_handle.mixer()), 
             Vec::new(), 
             Arc::new(AtomicU32::new(0))
         ),
         playing_infos: Vec::new(),
-        is_editing: false,
+        mode: "songs".to_string(),
         input_editing: "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string(),
         total_downloading_time: 0.0,
         state_download: 0.0,
         downloading_started: false,
         all_songs: Vec::new(),
+        all_playlists: Vec::new(),
+        active_playlist: "All songs".to_string(),
         is_running: false,
     };
     let running_app = app.run(&mut terminal).await;
@@ -49,15 +52,18 @@ async fn main() -> io::Result<()> {
 
 pub struct App {
     // Reorganise & reduce this variables (is_running at the end, some variables can maybe get out ...)
-    state_table: TableState,
+    songs_state: TableState,
+    playlists_state: TableState,
     player: Player,
     playing_infos: Vec<String>,
-    is_editing: bool,
+    mode: String,
     input_editing: String,
     total_downloading_time: f64,
     state_download: f64,
     downloading_started: bool,
     all_songs: Vec<HashMap<String, String>>,
+    all_playlists: Vec<String>,
+    active_playlist: String,
     is_running: bool,
 }
 
@@ -65,7 +71,8 @@ impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
         self.playing_infos = self.player.get_current_song_info();
-        self.all_songs = self.player.get_all_songs();
+        self.all_songs = self.player.get_all_songs_from_active_playlist(&self.active_playlist);
+        self.all_playlists = self.player.get_all_playlists();
 
         let (sender, mut receiver) = mpsc::channel(1);
 
@@ -113,8 +120,11 @@ impl App {
             self.input_editing = "Download successfull !".to_string();
         }
         
-        // Update all songs if new ones appears
-        self.all_songs = self.player.get_all_songs();
+        // Update all songs
+        self.all_songs = self.player.get_all_songs_from_active_playlist(&self.active_playlist);
+
+        // Update all playlists
+        self.all_playlists = self.player.get_all_playlists();
     }
 
     // Retrieve keys events
@@ -129,13 +139,13 @@ impl App {
 
     // Match key event to dedicated function
     async fn handle_key_event(&mut self, key_event: KeyEvent, sender: Sender<f64>) {
-        match self.is_editing {
+        match self.mode == "download".to_string() {
             true => {
                 match key_event.code {
                     KeyCode::Enter                  => { self.download_songs_from_url(self.input_editing.to_string(), sender).await; },
                     KeyCode::Backspace              => { self.remove_char_from_input(); },
                     KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
-                    KeyCode::Esc                    => { self.switch_mode(); },
+                    KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
             }, 
@@ -143,11 +153,11 @@ impl App {
             false => {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
-                    KeyCode::Enter                  => { self.add_song_to_queue(); },
-                    KeyCode::Up                     => { self.previous_song(); },
-                    KeyCode::Down                   => { self.next_song(); },
+                    KeyCode::Enter                  => { self.enter_action(); },
+                    KeyCode::Up                     => { self.previous(); },
+                    KeyCode::Down                   => { self.next(); },
                     KeyCode::Right                  => { self.skip_song(); },
-                    KeyCode::Left                   => { self.set_favorites(); },
+                    KeyCode::Char('l')              => { self.set_favorites(); },
                     KeyCode::Char(' ')              => { self.pause_play_song(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
@@ -156,47 +166,98 @@ impl App {
         }
     }
 
+    // Execute appropriate action depending on active mode
+    fn enter_action(&mut self) {
+        match self.mode.as_str() {
+            "playlists" => {
+                self.set_active_playlist();
+            }
+            "songs" => {
+                self.add_song_to_queue();
+            }
+            &_ => {}
+        }
+    }
+
+    // Set the new active playlist
+    fn set_active_playlist(&mut self) {
+        self.active_playlist = self.all_playlists[self.playlists_state.selected().expect("Can't retrieve active playlist selected id !")].to_string();
+    }
+
     // Add song to the queue on key pressed
     fn add_song_to_queue(&mut self) {
-        let i = match self.state_table.selected() {
-            Some(i) => {
-                i
-            }
-            None => 0,
-        };
-        let path = self.all_songs[i].get("path");
-        let path = path.as_deref().expect("Unable to make the varibale as ownership !");
-        self.player.add_song_to_queue(&path);
+        let i = self.songs_state.selected();
+        if i.is_some() {
+            let path = self.all_songs[i.expect("Cannot be a None value !")].get("path");
+            let path = path.as_deref().expect("Unable to make the varibale as ownership !");
+            self.player.add_song_to_queue(&path);
+        }
     }
 
-    // Select previous song in table on key pressed
-    fn previous_song(&mut self) {
-        let i = match self.state_table.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.all_songs.len() - 1
-                } else {
-                    i - 1
-                }
+    // Select previous one in active table on key pressed
+    fn previous(&mut self) {
+        match self.mode.as_str() {
+            "playlists" => {
+                let i = match self.playlists_state.selected() {
+                    Some(i) => {
+                        if i == 0 {
+                            self.all_playlists.len() - 1
+                        } else {
+                            i - 1
+                        }
+                    }
+                    None => 0,
+                };
+                self.playlists_state.select(Some(i));
             }
-            None => 0,
-        };
-        self.state_table.select(Some(i));
+            "songs" => {
+                let i = match self.songs_state.selected() {
+                    Some(i) => {
+                        if i == 0 {
+                            self.all_songs.len() - 1
+                        } else {
+                            i - 1
+                        }
+                    }
+                    None => 0,
+                };
+                self.songs_state.select(Some(i));
+            }
+            &_ => {}
+        }
     }
 
-    // Select next song in table on key pressed
-    fn next_song(&mut self) {
-        let i = match self.state_table.selected() {
-            Some(i) => {
-                if i >= self.all_songs.len() - 1 {
-                    0
-                } else {
-                    i + 1
-                }
+    // Select next one in active table on key pressed
+    fn next(&mut self) {
+        match self.mode.as_str() {
+            "playlists" => {
+                let i = match self.playlists_state.selected() {
+                    Some(i) => {
+                        if i >= self.all_playlists.len() - 1 {
+                            0
+                        } else {
+                            i + 1
+                        }
+                    }
+                    None => 0,
+                };
+                self.playlists_state.select(Some(i));
             }
-            None => 0,
-        };
-        self.state_table.select(Some(i));
+            "songs" => {
+                let i = match self.songs_state.selected() {
+                    Some(i) => {
+                        if i >= self.all_songs.len() - 1 {
+                            0
+                        } else {
+                            i + 1
+                        }
+                    }
+                    None => 0,
+                };
+                self.songs_state.select(Some(i));
+            }
+            &_ => {}
+        }
     }
 
     // Skip playing song on key pressed
@@ -214,27 +275,43 @@ impl App {
     }
 
     fn switch_mode(&mut self) {
-        match self.is_editing {
-            true => {
-                self.is_editing = false;
+        self.mode = self.next_mode();
+        match self.mode.as_str() {
+            "songs" => {
+                self.songs_state.select(Some(0));
             }
-            false => {
-                self.input_editing = "".to_string();
-                self.is_editing = true;
+            "download" => {
+                self.songs_state.select(None);
             }
+            "playlists" => {}
+            &_ => {}
         }
     }
 
-    fn set_favorites(&mut self) {
-        let i = match self.state_table.selected() {
-            Some(i) => {
-                i
+    fn next_mode(&mut self) -> String {
+        match self.mode.as_str() {
+            "songs" => {
+                return "download".to_string()
             }
-            None => 0,
-        };
-        let path = self.all_songs[i].get("path");
-        let path = path.as_deref().expect("Unable to make the varibale as ownership !");
-        self.player.set_favorites(&path);
+            "download" => {
+                return "playlists".to_string()
+            }
+            "playlists" => {
+                return "songs".to_string()
+            }
+            &_ => {}
+        }
+
+        return "".to_string()
+    }
+
+    fn set_favorites(&mut self) {
+        let i = self.songs_state.selected();
+        if i.is_some() {
+            let path = self.all_songs[i.expect("Cannot be a None value !")].get("path");
+            let path = path.as_deref().expect("Unable to make the varibale as ownership !");
+            self.player.set_favorites(&path);
+        }
     }
 
     fn remove_char_from_input(&mut self) {
@@ -361,16 +438,25 @@ impl App {
         let [playlists, songs] = horizontal.areas(playlists_songs);
 
         // Playlists section
-        let mut playlist_state = ListState::default();
-        let items = ["Favorites"];
-        let playlists_section = List::new(items)
+        let mut playlists_datas: Vec<Row> = Vec::new();
+        for playlist in &self.all_playlists {
+            playlists_datas.push(Row::new(vec![
+                playlist.to_string()
+            ]));
+        }
+        let playlists_table = Table::new(
+            playlists_datas,
+            [
+                Constraint::Fill(1),
+            ])
             .block(
                 Block::default()
                 .title(Line::from("Playlists"))
                 .borders(ratatui::widgets::Borders::ALL)
             )
-            .highlight_symbol(" █ ");
-        frame.render_stateful_widget(playlists_section, playlists, &mut playlist_state);
+            .row_highlight_style(Style::default().fg(Color::Magenta))
+            .highlight_symbol(Text::from(vec![" █ ".into()]));
+        frame.render_stateful_widget(playlists_table, playlists, &mut self.playlists_state);
 
         // Songs section
         let mut songs_datas: Vec<Row> = Vec::new();
@@ -399,18 +485,18 @@ impl App {
             ])
             .block(
                 Block::default()
-                .title(Line::from("All songs"))
+                .title(Line::from("Songs"))
                 .borders(ratatui::widgets::Borders::ALL)
             )
             .header(header)
             .row_highlight_style(Style::default().fg(Color::Magenta))
             .highlight_symbol(Text::from(vec![" █ ".into()]));
-        frame.render_stateful_widget(songs_table, songs, &mut self.state_table);
+        frame.render_stateful_widget(songs_table, songs, &mut self.songs_state);
 
         // Hotkeys section
-        let mut hotkeys_text = "Move up <Up> - Move down <Down> - Play <Enter> - Play/Pause <Space> - Skip <Right> - Download Mode <Tab> - Quit <Q>";
-        if self.is_editing {
-            hotkeys_text = "Download <Enter> - Songs Mode <Esc>";
+        let mut hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Like/Unlike <L> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
+        if self.mode == "download".to_string() {
+            hotkeys_text = "Download <Enter> - Switch Mode <Tab>";
         }
         let hotkeys_section = Block::default()
             .title(Line::from(hotkeys_text).centered());
