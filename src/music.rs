@@ -146,7 +146,6 @@ impl Player {
 			song_infos.insert(String::from("title"), "Unknown".to_string());
 			song_infos.insert(String::from("artist"), "Unknown".to_string());
 			song_infos.insert(String::from("duration"), "0".to_string());
-			song_infos.insert(String::from("path"), path.to_string());
 			song_infos.insert(String::from("is_favorite"), "♡".to_string());
 			
 			for frame in tag.frames() {
@@ -177,10 +176,15 @@ impl Player {
 			song_infos.insert(String::from("duration"), seconds.to_string());
 
 			let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
-			let favorites: Playlist = serde_json::from_str(&playlists_content)
+			let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
 				.expect("Playlists JSON content is not well-formatted !");
-			if favorites.songs_list.contains(&path.to_string()) {
-				song_infos.insert(String::from("is_favorite"), "♥".to_string());
+			for playlist in playlists {
+				if playlist.playlist_name == "Favorites" {
+					if playlist.songs_list.contains(&path.to_string()) {
+						song_infos.insert(String::from("is_favorite"), "♥".to_string());
+					}
+					break;
+				}
 			}
 		}
 		song_infos.insert(String::from("is_song"), is_song.to_string());
@@ -190,36 +194,64 @@ impl Player {
 
 	pub fn set_favorites(&mut self, path: &str) {
 		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
-		let mut favorites: Playlist = serde_json::from_str(&playlists_content)
+		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
 			.expect("Playlists JSON content is not well-formatted !");
-		if favorites.songs_list.contains(&path.to_string()) {
-			// Delete song from 'Favorites' playlist
-			let position = favorites.songs_list.iter().position(|n| n == &path.to_string()).expect("Cant get position of path into JSON file !");
-			favorites.songs_list.swap_remove(position);
-		} else {
-			// Add song to 'Favorites' playlist
-			favorites.songs_list.push(path.to_string());
-		}
+		for playlist in &mut playlists {
+			if playlist.playlist_name == "Favorites" {
+				if playlist.songs_list.contains(&path.to_string()) {
+					// Delete song from 'Favorites' playlist
+					let position = playlist.songs_list.iter().position(|n| n == &path.to_string()).expect("Cant get position of path into JSON file !");
+					playlist.songs_list.swap_remove(position);
+				} else {
+					// Add song to 'Favorites' playlist
+					playlist.songs_list.push(path.to_string());
+				}
 
-		let today_file = File::create("playlists.json").expect("Failed to create today.json");
-		let mut today_writer = BufWriter::new(today_file);
-		let _ = serde_json::to_writer(&mut today_writer, &favorites);
-		let _ = today_writer.flush();
+				let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
+				let mut playlists_writer = BufWriter::new(playlists_file);
+				let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+				let _ = playlists_writer.flush();
+				break;
+			}
+		}
 	}
 
-	// Return all the songs with their tags
-	pub fn get_all_songs(&mut self) -> Vec<HashMap<String, String>> {
+	// Return all the songs with their tags from the active playlist
+	pub fn get_all_songs_from_active_playlist(&mut self, playlist_name: &String) -> Vec<HashMap<String, String>> {
 		let mut songs = Vec::new();
 		let songs_path = fs::read_dir("songs").expect("Unable to find songs folder !");
 
-		for song_path in songs_path {
-			let song_infos = self.get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
-			if song_infos.get("is_song").expect("Can't get is_song variable !") == "true" {
-				songs.push(song_infos);
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+		for playlist in playlists {
+			if &playlist.playlist_name == playlist_name {
+				for song_path in songs_path {
+					let song_infos = self.get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
+					if song_infos.get("is_song").expect("Can't get is_song variable !") == "true" {
+						if playlist_name == &"All songs".to_string() || playlist.songs_list.contains(song_infos.get("path").expect("Can't get path variable !")) {
+							songs.push(song_infos);
+						}
+					}
+				}
+				break;
 			}
 		}
 
 		songs
+	}
+
+	// Return all playlists name
+	pub fn get_all_playlists(&mut self) -> Vec<String> {
+		let mut results = Vec::new();
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+		for playlist in playlists {
+			results.push(playlist.playlist_name);
+		}
+
+		results
 	}
 }
 
