@@ -282,11 +282,8 @@ impl App {
             }
             "download" => {
                 self.songs_state.select(None);
-                self.input_editing = "".to_string();
             }
-            "playlists" => {
-                self.input_editing = "https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string();
-            }
+            "playlists" => {}
             &_ => {}
         }
     }

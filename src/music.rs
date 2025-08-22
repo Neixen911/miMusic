@@ -134,56 +134,59 @@ impl Player {
 
 	// Return infos from song file
 	pub fn get_song_infos_from_file(&mut self, path: &str) -> HashMap<String, String> {
-		let file = File::open(path).expect("Unable to open file !");
 		let mut song_infos = HashMap::new();
 		let mut is_song = false;
+		
+		if path.contains(OUTPUT_FILE_FORMAT) {
+			let file = File::open(path).expect("Unable to open file !");
 
-		if let Ok(tag) = Tag::read_from2(&file) {	
-			is_song = true;
+			if let Ok(tag) = Tag::read_from2(&file) {	
+				is_song = true;
 
-			// Default datas
-			song_infos.insert(String::from("path"), path.to_string());
-			song_infos.insert(String::from("title"), "Unknown".to_string());
-			song_infos.insert(String::from("artist"), "Unknown".to_string());
-			song_infos.insert(String::from("duration"), "0".to_string());
-			song_infos.insert(String::from("is_favorite"), "♡".to_string());
-			
-			for frame in tag.frames() {
-				let id = frame.id();
-			
-				match frame.content() {
-					Content::Text(value) => {
-						match id {
-							"TIT2" => {
-								song_infos.insert(String::from("title"), value.to_string());
-							}
-							"TPE1" => {
-								song_infos.insert(String::from("artist"), value.to_string());
-							}
+				// Default datas
+				song_infos.insert(String::from("path"), path.to_string());
+				song_infos.insert(String::from("title"), "Unknown".to_string());
+				song_infos.insert(String::from("artist"), "Unknown".to_string());
+				song_infos.insert(String::from("duration"), "0".to_string());
+				song_infos.insert(String::from("is_favorite"), "♡".to_string());
+				
+				for frame in tag.frames() {
+					let id = frame.id();
+				
+					match frame.content() {
+						Content::Text(value) => {
+							match id {
+								"TIT2" => {
+									song_infos.insert(String::from("title"), value.to_string());
+								}
+								"TPE1" => {
+									song_infos.insert(String::from("artist"), value.to_string());
+								}
 
-							_default => {
-								continue;
+								_default => {
+									continue;
+								}
 							}
 						}
-					}
-					_content => {
-						continue;
+						_content => {
+							continue;
+						}
 					}
 				}
-			}
 
-			let seconds = self.get_audio_duration(path);
-			song_infos.insert(String::from("duration"), seconds.to_string());
+				let seconds = self.get_audio_duration(path);
+				song_infos.insert(String::from("duration"), seconds.to_string());
 
-			let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
-			let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
-				.expect("Playlists JSON content is not well-formatted !");
-			for playlist in playlists {
-				if playlist.playlist_name == "Favorites" {
-					if playlist.songs_list.contains(&path.to_string()) {
-						song_infos.insert(String::from("is_favorite"), "♥".to_string());
+				let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+				let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+					.expect("Playlists JSON content is not well-formatted !");
+				for playlist in playlists {
+					if playlist.playlist_name == "Favorites" {
+						if playlist.songs_list.contains(&path.to_string()) {
+							song_infos.insert(String::from("is_favorite"), "♥".to_string());
+						}
+						break;
 					}
-					break;
 				}
 			}
 		}
@@ -311,7 +314,7 @@ pub async fn download_song(song_url: String) {
 		"--add-metadata", 
 		"-o", filename.to_str().expect("Unable to convert to str"), 
 		&song_url, 
-	]).status().expect("Can't download song !");
+	]).output().expect("Can't download song !");
 
 	applying_metadata("songs/song".to_owned() + &id_song.to_string() + "." + OUTPUT_FILE_FORMAT);
 }
@@ -330,7 +333,7 @@ fn applying_metadata(filename: String) {
 	}
 
 	// List of commons regex to remove
-	let list_regex = [ r"\(.*\)", r"\[.*\]", r".*「", r"」.*", r".*-", r" feat.*", r"ft.*" ];
+	let list_regex = [ r"\(.*\)", r"\[.*\]", r".*『", r"』.*", r".*「", r"」.*", r".*-", r" feat.*", r"ft.*", r"by.*" ];
 	for regex in list_regex {
 		let regex_to_remove = Regex::new(regex).expect("Can't create Regex !");
 		new_title = regex_to_remove.replace_all(&new_title, "").to_string();
