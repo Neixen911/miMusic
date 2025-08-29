@@ -1,50 +1,30 @@
-## miMusic
+# miMusic
 
-miMusic is a lightweight and efficient music player tailored specifically for embedded systems. It is engineered with a strong focus on performance, ensuring smooth audio playback while maintaining minimal use of system resources. Every line of code is written with optimization in mind, making miMusic ideal for devices with limited processing power, memory, or storage.
-
-This music player aims to provide:
-
-- A smooth and responsive terminal UI (TUI)
-- Minimal resource footprint
-- Clean and safe systems programming
-- A project where everyone can take part
+miMusic is a high-performance audio player designed specifically for embedded systems. Developed entirely in Rust, it combines a TUI with complete playlist management and an integrated download system. Its architecture aims to be lightweight and responsive to ensure smooth audio playback while consuming minimal system resources.
 
 Here’s a preview of miMusic’s terminal interface:
 
 ![miMusic-TUI](https://github.com/user-attachments/assets/70bd4427-19f4-489a-81c8-d6020c93d663)
 *🚧 (miMusic is currently under active development) 🚧*
 
-------------------------------------
+## Technical Information
 
-### Why choosing Rust ?
+**Optimized Performance** : Memory consumption of approximately 15MB currently. The architecture aims to guarantee minimal CPU and memory usage. Performances are currently being optimized.
 
+**Instant Startup** : Fast launch time thanks to optimized architecture. Startup in a few milliseconds.
 
-The goal of miMusic is to create a music player that is both as secure and as performant as possible — without sacrificing one for the other.
-Rust makes this possible by combining:
-- Memory safety – eliminating common bugs / security vulnerabilities
-- High performance – matching or exceeding the speed of C/C++
-- Robust concurrency – enabling safe, parallel execution
-- Low-level language - stay close to the machine
+**Enhanced Stability** : The simplified architecture aims to ensure reliable operation on aging hardware or in constrained environments, guaranteeing an uninterrupted audio experience.
 
-By building miMusic entirely in Rust, we aim to maximize both security and performance, making it ideal for lightweight, reliable playback on devices like the Raspberry Pi.
+**Offline Operation** : Complete autonomy - only download mode requires an Internet connection to retrieve MP3 files. Once downloaded, all your music is accessible entirely offline.
 
-------------------------------------
+**Storage Requirements** : Plan storage space suitable for your music library (approximately 3-5MB per song). The player downloads and stores all MP3 files locally to ensure smooth playback without network dependency.
 
-### What features does miMusic offer ?
+## Upcoming Features
 
-- [x] Lightweight audio playback
-- [x] Terminal-based UI (TUI)
-- [x] Playlists, songs and download processus
-- [x] Fast, responsive, and resource-efficient
-
-------------------------------------
-
-### What’s coming soon ?
-
-- [ ] Audio waveform
-- [ ] More ID3 tags
-- [ ] Unique playback for one device
-- [ ] Non-regression tests
+- [ ] Audio waveform visualization
+- [ ] Extended ID3 tags support
+- [ ] Exclusive playback per device
+- [ ] Non-regression automated tests
 
 ------------------------------------
 
