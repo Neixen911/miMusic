@@ -414,10 +414,12 @@ impl App {
         ])
         .margin(1)
         .split(download);
-
+        
+        let download_border_style = if self.mode.as_str() == "download" {Color::Magenta} else {Color::Reset};
         let downloading_section = Block::default()
             .title(Line::from("Download URL"))
-            .borders(ratatui::widgets::Borders::ALL);
+            .borders(ratatui::widgets::Borders::ALL)
+            .border_style(download_border_style);
         frame.render_widget(downloading_section, download);
 
         let downloading_label = Span::styled(
@@ -444,6 +446,7 @@ impl App {
                 playlist.to_string()
             ]));
         }
+        let playlists_border_style = if self.mode.as_str() == "playlists" {Color::Magenta} else {Color::Reset};
         let playlists_table = Table::new(
             playlists_datas,
             [
@@ -453,6 +456,7 @@ impl App {
                 Block::default()
                 .title(Line::from("Playlists"))
                 .borders(ratatui::widgets::Borders::ALL)
+                .border_style(playlists_border_style)
             )
             .row_highlight_style(Style::default().fg(Color::Magenta))
             .highlight_symbol(Text::from(vec![" █ ".into()]));
@@ -475,6 +479,7 @@ impl App {
             ]));
         }
         let header = Row::new(vec!["Title", "Artist", "Duration", ""]);
+        let songs_border_style = if self.mode.as_str() == "songs" {Color::Magenta} else {Color::Reset};
         let songs_table = Table::new(
             songs_datas,
             [
@@ -487,6 +492,7 @@ impl App {
                 Block::default()
                 .title(Line::from("Songs"))
                 .borders(ratatui::widgets::Borders::ALL)
+                .border_style(songs_border_style)
             )
             .header(header)
             .row_highlight_style(Style::default().fg(Color::Magenta))

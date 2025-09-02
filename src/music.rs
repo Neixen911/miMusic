@@ -248,7 +248,7 @@ impl Player {
 	pub fn get_all_playlists(&mut self) -> Vec<String> {
 		let mut results = Vec::new();
 		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
-		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+		let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
 			.expect("Playlists JSON content is not well-formatted !");
 		for playlist in playlists {
 			results.push(playlist.playlist_name);
