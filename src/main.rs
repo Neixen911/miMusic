@@ -5,11 +5,11 @@ mod music;
 use music::Player;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
-    layout::{Constraint, Layout},
+    layout::{Constraint, Flex, Layout},
     prelude::{Alignment},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Cell, Gauge, Paragraph, Row, Table, TableState},
+    widgets::{Block, Cell, Clear, Gauge, Paragraph, Row, Table, TableState, Wrap},
     DefaultTerminal, Frame,
 };
 use rodio::{OutputStreamBuilder, Sink};
@@ -138,19 +138,10 @@ impl App {
     }
 
     // Match key event to dedicated function
+    // Refactor function calls to remove intermediate function calls (enter_action() using match isn't necessary if the right function is directly call)
     async fn handle_key_event(&mut self, key_event: KeyEvent, sender: Sender<f64>) {
-        match self.mode == "download".to_string() {
-            true => {
-                match key_event.code {
-                    KeyCode::Enter                  => { self.download_songs_from_url(self.input_editing.to_string(), sender).await; },
-                    KeyCode::Backspace              => { self.remove_char_from_input(); },
-                    KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
-                    KeyCode::Tab                    => { self.switch_mode(); },
-                    _ => {}
-                }
-            }, 
-
-            false => {
+        match self.mode.as_str() {
+            "songs" => {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
                     KeyCode::Enter                  => { self.enter_action(); },
@@ -163,6 +154,34 @@ impl App {
                     _ => {}
                 }
             }
+            "download" => {
+                match key_event.code {
+                    KeyCode::Enter                  => { self.download_songs_from_url(self.input_editing.to_string(), sender).await; },
+                    KeyCode::Backspace              => { self.remove_char_from_input(); },
+                    KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
+                    KeyCode::Tab                    => { self.switch_mode(); },
+                    _ => {}
+                }
+            }
+            "playlists" => {
+                match key_event.code {
+                    KeyCode::Char('q')              => { self.exit(); },
+                    KeyCode::Enter                  => { self.enter_action(); },
+                    KeyCode::Up                     => { self.previous(); },
+                    KeyCode::Down                   => { self.next(); },
+                    KeyCode::Tab                    => { self.switch_mode(); },
+                    KeyCode::Delete                 => { self.remove_popup_playlists(); },
+                    _ => {}
+                }
+            }
+            "popup_playlists" => {
+                match key_event.code {
+                    KeyCode::Enter                  => { self.remove_or_not_playlist(); },
+                    KeyCode::Tab                    => { self.switch_answer(); },
+                    _ => {}
+                }
+            }
+            &_ => {}
         }
     }
 
@@ -299,10 +318,25 @@ impl App {
             "playlists" => {
                 return "songs".to_string()
             }
+            "popup_playlists" => {
+                return "playlists".to_string()
+            }
             &_ => {}
         }
 
         return "".to_string()
+    }
+
+    fn remove_popup_playlists(&mut self) {
+        self.mode = "popup_playlists".to_string();
+    }
+
+    fn remove_or_not_playlist(&mut self) {
+        self.mode = self.next_mode();
+    }
+
+    fn switch_answer(&mut self) {
+
     }
 
     fn set_favorites(&mut self) {
@@ -500,13 +534,63 @@ impl App {
         frame.render_stateful_widget(songs_table, songs, &mut self.songs_state);
 
         // Hotkeys section
-        let mut hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Like/Unlike <L> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
-        if self.mode == "download".to_string() {
-            hotkeys_text = "Download <Enter> - Switch Mode <Tab>";
+        let mut hotkeys_text = "";
+        match self.mode.as_str() {
+            "songs" => {
+                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Like/Unlike <L> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
+            }
+            "download" => {
+                hotkeys_text = "Download <Enter> - Switch Mode <Tab>";
+            }
+            "playlists" => {
+                hotkeys_text = "Navigate <Up/Down> - Select <Enter> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
+            }
+            "popup_playlists" => {
+                hotkeys_text = "Select <Enter> - Switch Answer <Tab>";
+            }
+            &_ => {}
         }
         let hotkeys_section = Block::default()
             .title(Line::from(hotkeys_text).centered());
         frame.render_widget(hotkeys_section, hotkeys);
+
+        // Playlists popup (Create/Modify/Delete)
+        if self.mode.as_str() == "popup_playlists" {
+            let playlists_popup = frame.area();
+
+            let vertical = Layout::vertical([Constraint::Length(12)]).flex(Flex::Center);
+            let horizontal = Layout::horizontal([Constraint::Length(50)]).flex(Flex::Center);
+            let [playlists_popup] = vertical.areas(playlists_popup);
+            let [playlists_popup] = horizontal.areas(playlists_popup);
+
+            let chunks = Layout::vertical([
+                Constraint::Length(2),
+                Constraint::Max(3),
+                Constraint::Length(1),
+            ])
+            .vertical_margin(3)
+            .horizontal_margin(8)
+            .split(playlists_popup);
+
+            let answers = Layout::horizontal([
+                Constraint::Min(1),
+                Constraint::Min(1),
+            ])
+            .split(chunks[2]);
+
+            frame.render_widget(Clear, playlists_popup);
+
+            let playlists_popup_block = Block::bordered();
+            frame.render_widget(playlists_popup_block, playlists_popup);
+
+            let playlists_popup_question = Line::from("Do you really want to remove '".to_owned() + &self.active_playlist + "' playlist ?").alignment(Alignment::Center);
+            frame.render_widget(Paragraph::new(playlists_popup_question).wrap(Wrap { trim: true }), chunks[0]);
+
+            let playlists_popup_answer_positive = Line::from("Yes").alignment(Alignment::Left);
+            frame.render_widget(Paragraph::new(playlists_popup_answer_positive), answers[0]);
+            let playlists_popup_answer_negative = Line::from("No").alignment(Alignment::Right);
+            frame.render_widget(Paragraph::new(playlists_popup_answer_negative), answers[1]);
+        }
     }
 
     // Exit the app on key pressed
