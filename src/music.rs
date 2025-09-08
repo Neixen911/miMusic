@@ -203,7 +203,7 @@ impl Player {
 			if playlist.playlist_name == "Favorites" {
 				if playlist.songs_list.contains(&path.to_string()) {
 					// Delete song from 'Favorites' playlist
-					let position = playlist.songs_list.iter().position(|n| n == &path.to_string()).expect("Cant get position of path into JSON file !");
+					let position = playlist.songs_list.iter().position(|n| n == &path.to_string()).expect("Can't get position of path into JSON file !");
 					playlist.songs_list.swap_remove(position);
 				} else {
 					// Add song to 'Favorites' playlist
@@ -255,6 +255,19 @@ impl Player {
 		}
 
 		results
+	}
+
+	// Remove the selected playlist
+	pub fn remove_playlist(&mut self, playlist_position_to_remove: usize) {
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+		// Delete playlist
+		playlists.swap_remove(playlist_position_to_remove);
+		let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
+		let mut playlists_writer = BufWriter::new(playlists_file);
+		let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+		let _ = playlists_writer.flush();
 	}
 }
 

@@ -44,6 +44,7 @@ async fn main() -> io::Result<()> {
         all_playlists: Vec::new(),
         active_playlist: "All songs".to_string(),
         is_running: false,
+        is_answer_positive: false,
     };
     let running_app = app.run(&mut terminal).await;
     ratatui::restore();
@@ -65,6 +66,7 @@ pub struct App {
     all_playlists: Vec<String>,
     active_playlist: String,
     is_running: bool,
+    is_answer_positive: bool,
 }
 
 impl App {
@@ -170,7 +172,12 @@ impl App {
                     KeyCode::Up                     => { self.previous(); },
                     KeyCode::Down                   => { self.next(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
-                    KeyCode::Delete                 => { self.remove_popup_playlists(); },
+                    KeyCode::Delete                 => {
+                        if self.active_playlist != "All items".to_string() && self.active_playlist != "Favorites".to_string() {
+                            self.remove_popup_playlists();
+                        }
+                    },
+                    KeyCode::Char('a')              => { self.create_playlist(); },
                     _ => {}
                 }
             }
@@ -332,11 +339,19 @@ impl App {
     }
 
     fn remove_or_not_playlist(&mut self) {
+        if self.is_answer_positive {
+            let i = self.playlists_state.selected();
+            if i.is_some() {
+                self.player.remove_playlist(i.expect("Cannot be a None value !"));
+            }
+        }
         self.mode = self.next_mode();
     }
 
     fn switch_answer(&mut self) {
-
+        if self.is_answer_positive {
+            self.is_answer_positive = false;
+        } else { self.is_answer_positive = true };
     }
 
     fn set_favorites(&mut self) {
@@ -543,7 +558,9 @@ impl App {
                 hotkeys_text = "Download <Enter> - Switch Mode <Tab>";
             }
             "playlists" => {
-                hotkeys_text = "Navigate <Up/Down> - Select <Enter> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
+                if self.playlists_state.selected().unwrap() != 0 && self.playlists_state.selected().unwrap() != 1 {
+                    hotkeys_text = "Navigate <Up/Down> - Select <Enter> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
+                } else { hotkeys_text = "Navigate <Up/Down> - Select <Enter> - Switch Mode <Tab> - Quit <Q>"; }
             }
             "popup_playlists" => {
                 hotkeys_text = "Select <Enter> - Switch Answer <Tab>";
@@ -556,12 +573,12 @@ impl App {
 
         // Playlists popup (Create/Modify/Delete)
         if self.mode.as_str() == "popup_playlists" {
-            let playlists_popup = frame.area();
+            let popup_playlists = frame.area();
 
             let vertical = Layout::vertical([Constraint::Length(12)]).flex(Flex::Center);
             let horizontal = Layout::horizontal([Constraint::Length(50)]).flex(Flex::Center);
-            let [playlists_popup] = vertical.areas(playlists_popup);
-            let [playlists_popup] = horizontal.areas(playlists_popup);
+            let [popup_playlists] = vertical.areas(popup_playlists);
+            let [popup_playlists] = horizontal.areas(popup_playlists);
 
             let chunks = Layout::vertical([
                 Constraint::Length(2),
@@ -570,26 +587,31 @@ impl App {
             ])
             .vertical_margin(3)
             .horizontal_margin(8)
-            .split(playlists_popup);
+            .split(popup_playlists);
 
+            let answer_positive = "Yes";
+            let answer_negative = "No";
             let answers = Layout::horizontal([
-                Constraint::Min(1),
-                Constraint::Min(1),
+                Constraint::Length(3 + 4),
+                Constraint::Length(2 + 4),
             ])
+            .flex(Flex::SpaceBetween)
             .split(chunks[2]);
 
-            frame.render_widget(Clear, playlists_popup);
+            frame.render_widget(Clear, popup_playlists);
 
-            let playlists_popup_block = Block::bordered();
-            frame.render_widget(playlists_popup_block, playlists_popup);
+            let popup_playlists_block = Block::bordered();
+            frame.render_widget(popup_playlists_block, popup_playlists);
 
-            let playlists_popup_question = Line::from("Do you really want to remove '".to_owned() + &self.active_playlist + "' playlist ?").alignment(Alignment::Center);
-            frame.render_widget(Paragraph::new(playlists_popup_question).wrap(Wrap { trim: true }), chunks[0]);
+            let popup_playlists_question = Line::from("Do you really want to remove '".to_owned() + &self.all_playlists[self.playlists_state.selected().expect("Can't be empty !")] + "' playlist ?").alignment(Alignment::Center);
+            frame.render_widget(Paragraph::new(popup_playlists_question).wrap(Wrap { trim: true }), chunks[0]);
 
-            let playlists_popup_answer_positive = Line::from("Yes").alignment(Alignment::Left);
-            frame.render_widget(Paragraph::new(playlists_popup_answer_positive), answers[0]);
-            let playlists_popup_answer_negative = Line::from("No").alignment(Alignment::Right);
-            frame.render_widget(Paragraph::new(playlists_popup_answer_negative), answers[1]);
+            let popup_playlists_answer_positive_style = if self.is_answer_positive {Color::Magenta} else {Color::Reset};
+            let popup_playlists_answer_negative_style = if !self.is_answer_positive {Color::Magenta} else {Color::Reset};
+            let popup_playlists_answer_positive = Line::from(answer_positive).alignment(Alignment::Center);
+            frame.render_widget(Paragraph::new(popup_playlists_answer_positive).style(Style::default().bg(popup_playlists_answer_positive_style)), answers[0]);
+            let popup_playlists_answer_negative = Line::from(answer_negative).alignment(Alignment::Center);
+            frame.render_widget(Paragraph::new(popup_playlists_answer_negative).style(Style::default().bg(popup_playlists_answer_negative_style)), answers[1]);
         }
     }
 
