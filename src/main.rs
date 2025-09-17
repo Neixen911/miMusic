@@ -172,16 +172,19 @@ impl App {
                     KeyCode::Up                     => { self.previous(); },
                     KeyCode::Down                   => { self.next(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
-                    KeyCode::Delete                 => {
-                        if self.active_playlist != "All items".to_string() && self.active_playlist != "Favorites".to_string() {
-                            self.remove_popup_playlists();
-                        }
-                    },
-                    KeyCode::Char('a')              => { self.create_playlist(); },
+                    KeyCode::Delete                 => { self.create_popup_playlists("remove")},
+                    KeyCode::Char('a')              => { self.create_popup_playlists("add"); },
                     _ => {}
                 }
             }
-            "popup_playlists" => {
+            "add_popup_playlists" => {
+                match key_event.code {
+                    KeyCode::Enter                  => { self.add_or_not_playlist(); },
+                    KeyCode::Tab                    => { self.switch_answer(); },
+                    _ => {}
+                }
+            }
+            "remove_popup_playlists" => {
                 match key_event.code {
                     KeyCode::Enter                  => { self.remove_or_not_playlist(); },
                     KeyCode::Tab                    => { self.switch_answer(); },
@@ -325,7 +328,10 @@ impl App {
             "playlists" => {
                 return "songs".to_string()
             }
-            "popup_playlists" => {
+            "add_popup_playlists" => {
+                return "playlists".to_string()
+            }
+            "remove_popup_playlists" => {
                 return "playlists".to_string()
             }
             &_ => {}
@@ -334,8 +340,29 @@ impl App {
         return "".to_string()
     }
 
-    fn remove_popup_playlists(&mut self) {
-        self.mode = "popup_playlists".to_string();
+    fn create_popup_playlists(&mut self, keyword: &str) {
+        match keyword {
+            "add" => {
+                self.mode = "add_popup_playlists".to_string();
+            }
+            "modify" => {
+
+            }
+            "remove" => {
+                let selected_playlist = self.all_playlists[self.playlists_state.selected().expect("Can't retrieve active playlist selected id !")].to_string();
+                if selected_playlist != "All songs".to_string() && selected_playlist != "Favorites".to_string() {
+                    self.mode = "remove_popup_playlists".to_string();
+                }
+            }
+            &_ => {}
+        }
+    }
+
+    fn add_or_not_playlist(&mut self) {
+        if self.is_answer_positive {
+            self.player.add_playlist();
+        }
+        self.mode = self.next_mode();
     }
 
     fn remove_or_not_playlist(&mut self) {
@@ -558,11 +585,9 @@ impl App {
                 hotkeys_text = "Download <Enter> - Switch Mode <Tab>";
             }
             "playlists" => {
-                if self.playlists_state.selected().unwrap() != 0 && self.playlists_state.selected().unwrap() != 1 {
-                    hotkeys_text = "Navigate <Up/Down> - Select <Enter> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
-                } else { hotkeys_text = "Navigate <Up/Down> - Select <Enter> - Switch Mode <Tab> - Quit <Q>"; }
+                hotkeys_text = "Navigate <Up/Down> - Select <Enter> - New <A> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
             }
-            "popup_playlists" => {
+            "remove_popup_playlists" => {
                 hotkeys_text = "Select <Enter> - Switch Answer <Tab>";
             }
             &_ => {}
@@ -572,38 +597,50 @@ impl App {
         frame.render_widget(hotkeys_section, hotkeys);
 
         // Playlists popup (Create/Modify/Delete)
-        if self.mode.as_str() == "popup_playlists" {
-            let popup_playlists = frame.area();
+        let popup_playlists = frame.area();
 
-            let vertical = Layout::vertical([Constraint::Length(12)]).flex(Flex::Center);
-            let horizontal = Layout::horizontal([Constraint::Length(50)]).flex(Flex::Center);
-            let [popup_playlists] = vertical.areas(popup_playlists);
-            let [popup_playlists] = horizontal.areas(popup_playlists);
+        let vertical = Layout::vertical([Constraint::Length(12)]).flex(Flex::Center);
+        let horizontal = Layout::horizontal([Constraint::Length(50)]).flex(Flex::Center);
+        let [popup_playlists] = vertical.areas(popup_playlists);
+        let [popup_playlists] = horizontal.areas(popup_playlists);
 
-            let chunks = Layout::vertical([
-                Constraint::Length(2),
-                Constraint::Max(3),
-                Constraint::Length(1),
-            ])
-            .vertical_margin(3)
-            .horizontal_margin(8)
-            .split(popup_playlists);
+        let chunks = Layout::vertical([
+            Constraint::Length(2),
+            Constraint::Max(3),
+            Constraint::Length(1),
+        ])
+        .vertical_margin(3)
+        .horizontal_margin(8)
+        .split(popup_playlists);
 
-            let answer_positive = "Yes";
-            let answer_negative = "No";
-            let answers = Layout::horizontal([
-                Constraint::Length(3 + 4),
-                Constraint::Length(2 + 4),
-            ])
-            .flex(Flex::SpaceBetween)
-            .split(chunks[2]);
+        let answer_positive = "Yes";
+        let answer_negative = "No";
+        let answers = Layout::horizontal([
+            Constraint::Length(3 + 4),
+            Constraint::Length(2 + 4),
+        ])
+        .flex(Flex::SpaceBetween)
+        .split(chunks[2]);
 
+        if self.mode.as_str().contains("popup_playlists") {
             frame.render_widget(Clear, popup_playlists);
 
             let popup_playlists_block = Block::bordered();
             frame.render_widget(popup_playlists_block, popup_playlists);
 
-            let popup_playlists_question = Line::from("Do you really want to remove '".to_owned() + &self.all_playlists[self.playlists_state.selected().expect("Can't be empty !")] + "' playlist ?").alignment(Alignment::Center);
+            let popup_playlists_question: String;
+            match self.mode.as_str() {
+                "add_popup_playlists" => {
+                    popup_playlists_question = "Do you want to add a new playlist ?".to_string();
+                }
+                "remove_popup_playlists" => {
+                    popup_playlists_question = format!("Do you really want to remove '{}' playlist ?", self.all_playlists[self.playlists_state.selected().expect("Can't be empty !")]);
+                }
+                &_ => {
+                    popup_playlists_question = "Bro, no question here. Just you and me. Choose and good luck !".to_string();
+                }
+            }
+            let popup_playlists_question = Line::from(popup_playlists_question).alignment(Alignment::Center);
             frame.render_widget(Paragraph::new(popup_playlists_question).wrap(Wrap { trim: true }), chunks[0]);
 
             let popup_playlists_answer_positive_style = if self.is_answer_positive {Color::Magenta} else {Color::Reset};

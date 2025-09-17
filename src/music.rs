@@ -257,6 +257,23 @@ impl Player {
 		results
 	}
 
+	// Add a new playlist
+	pub fn add_playlist(&mut self) {
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+		let index = playlists.len() - 2;
+		let new = Playlist {
+			playlist_name: "Playlist ".to_string() + index.to_string().as_str(),
+			songs_list: Vec::new(),
+		};
+		playlists.push(new);
+		let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
+		let mut playlists_writer = BufWriter::new(playlists_file);
+		let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+		let _ = playlists_writer.flush();
+	}
+
 	// Remove the selected playlist
 	pub fn remove_playlist(&mut self, playlist_position_to_remove: usize) {
 		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
