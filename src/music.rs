@@ -262,7 +262,16 @@ impl Player {
 		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
 		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
 			.expect("Playlists JSON content is not well-formatted !");
-		let index = playlists.len() - 2;
+
+		// Return the next index to set the playlist name
+		let mut index = playlists.len();
+		for i in 0..index {
+			if !playlists.iter().any(|playlist| playlist.playlist_name == format!("Playlist {}", i)) {
+				index = i;
+				break
+			}
+		};
+
 		let new = Playlist {
 			playlist_name: "Playlist ".to_string() + index.to_string().as_str(),
 			songs_list: Vec::new(),
