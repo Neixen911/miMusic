@@ -184,6 +184,7 @@ impl App {
                 match key_event.code {
                     KeyCode::Enter                  => { self.add_or_not_playlist(); },
                     KeyCode::Tab                    => { self.switch_answer(); },
+                    KeyCode::Esc                    => { self.next_mode(); }
                     _ => {}
                 }
             }
@@ -193,6 +194,7 @@ impl App {
                     KeyCode::Tab                    => { self.switch_answer(); },
                     KeyCode::Backspace              => { self.remove_char_from_input(); },
                     KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
+                    KeyCode::Esc                    => { self.next_mode(); }
                     _ => {}
                 }
             }
@@ -200,6 +202,7 @@ impl App {
                 match key_event.code {
                     KeyCode::Enter                  => { self.remove_or_not_playlist(); },
                     KeyCode::Tab                    => { self.switch_answer(); },
+                    KeyCode::Esc                    => { self.next_mode(); }
                     _ => {}
                 }
             }
@@ -316,7 +319,7 @@ impl App {
     }
 
     fn switch_mode(&mut self) {
-        self.mode = self.next_mode();
+        self.next_mode();
         match self.mode.as_str() {
             "songs" => {
                 self.songs_state.select(Some(0));
@@ -329,30 +332,33 @@ impl App {
         }
     }
 
-    fn next_mode(&mut self) -> String {
+    fn next_mode(&mut self) {
+        let next_mode: &str;
         match self.mode.as_str() {
             "songs" => {
-                return "download".to_string()
+                next_mode = "download";
             }
             "download" => {
-                return "playlists".to_string()
+                next_mode = "playlists";
             }
             "playlists" => {
-                return "songs".to_string()
+                next_mode = "songs";
             }
             "add_popup_playlists" => {
-                return "playlists".to_string()
+                next_mode = "playlists";
             }
             "modify_popup_playlists" => {
-                return "playlists".to_string()
+                next_mode = "playlists";
             }
             "remove_popup_playlists" => {
-                return "playlists".to_string()
+                next_mode = "playlists";
             }
-            &_ => {}
+            &_ => {
+                next_mode = "";
+            }
         }
 
-        return "".to_string()
+        self.mode = next_mode.to_string();
     }
 
     fn create_popup_playlists(&mut self, keyword: &str) {
@@ -380,14 +386,14 @@ impl App {
         if self.is_answer_positive {
             self.player.add_playlist();
         }
-        self.mode = self.next_mode();
+        self.next_mode();
     }
 
     fn modify_or_not_playlist(&mut self) {
         if self.is_answer_positive {
             // self.player.modify_playlist();
         }
-        self.mode = self.next_mode();
+        self.next_mode();
     }
 
     fn remove_or_not_playlist(&mut self) {
@@ -397,7 +403,7 @@ impl App {
                 self.player.remove_playlist(i.expect("Cannot be a None value !"));
             }
         }
-        self.mode = self.next_mode();
+        self.next_mode();
     }
 
     fn switch_answer(&mut self) {
@@ -631,13 +637,13 @@ impl App {
                 hotkeys_text = "Navigate <Up/Down> - Select <Enter> - New <A> - Modify <M> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
             }
             "add_popup_playlists" => {
-                hotkeys_text = "Switch Answer <Tab> - Select <Enter>";
+                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
             }
             "modify_popup_playlists" => {
-                hotkeys_text = "Select <Enter>";
+                hotkeys_text = "Select <Enter> - Close <Esc>";
             }
             "remove_popup_playlists" => {
-                hotkeys_text = "Switch Answer <Tab> - Select <Enter>";
+                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
             }
             &_ => {
                 hotkeys_text = "";
