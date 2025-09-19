@@ -190,8 +190,7 @@ impl App {
             }
             "modify_popup_playlists" => {
                 match key_event.code {
-                    KeyCode::Enter                  => { self.modify_or_not_playlist(); },
-                    KeyCode::Tab                    => { self.switch_answer(); },
+                    KeyCode::Enter                  => { self.modify_playlist(); },
                     KeyCode::Backspace              => { self.remove_char_from_input(); },
                     KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
                     KeyCode::Esc                    => { self.next_mode(); }
@@ -389,19 +388,16 @@ impl App {
         self.next_mode();
     }
 
-    fn modify_or_not_playlist(&mut self) {
-        if self.is_answer_positive {
-            // self.player.modify_playlist();
-        }
+    fn modify_playlist(&mut self) {
+        let i = self.playlists_state.selected();
+        self.player.modify_playlist(i.expect("Cannot be a None value !"), &self.input_modify_playlists);
         self.next_mode();
     }
 
     fn remove_or_not_playlist(&mut self) {
         if self.is_answer_positive {
             let i = self.playlists_state.selected();
-            if i.is_some() {
-                self.player.remove_playlist(i.expect("Cannot be a None value !"));
-            }
+            self.player.remove_playlist(i.expect("Cannot be a None value !"));
         }
         self.next_mode();
     }

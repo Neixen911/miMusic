@@ -274,13 +274,29 @@ impl Player {
 		let _ = playlists_writer.flush();
 	}
 
+	// Modify the selected playlist
+	pub fn modify_playlist(&mut self, actual_playlist_position: usize, new_playlist_name: &String) {
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+
+		let mut playlist: Playlist = playlists.remove(actual_playlist_position);
+		playlist.playlist_name = new_playlist_name.to_string();
+		playlists.insert(actual_playlist_position, playlist);
+
+		let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
+		let mut playlists_writer = BufWriter::new(playlists_file);
+		let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+		let _ = playlists_writer.flush();
+	}
+
 	// Remove the selected playlist
 	pub fn remove_playlist(&mut self, playlist_position_to_remove: usize) {
 		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
 		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
 			.expect("Playlists JSON content is not well-formatted !");
 		// Delete playlist
-		playlists.swap_remove(playlist_position_to_remove);
+		playlists.remove(playlist_position_to_remove);
 		let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
 		let mut playlists_writer = BufWriter::new(playlists_file);
 		let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
