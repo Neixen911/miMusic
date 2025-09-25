@@ -2,14 +2,14 @@
 
 mod music;
 
-use music::Player;
+use music::{Player, Playlist};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
-    layout::{Constraint, Layout},
+    layout::{Constraint, Flex, Layout},
     prelude::{Alignment},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Cell, Gauge, Paragraph, Row, Table, TableState},
+    widgets::{Block, Cell, Clear, Gauge, Paragraph, Row, Table, TableState, Wrap},
     DefaultTerminal, Frame,
 };
 use rodio::{OutputStreamBuilder, Sink};
@@ -29,6 +29,7 @@ async fn main() -> io::Result<()> {
     let mut app = App {
         songs_state: TableState::default().with_selected(0),
         playlists_state: TableState::default().with_selected(0),
+        song_to_playlists_state: TableState::default().with_selected(0),
         player: Player::new(
             Sink::connect_new(stream_handle.mixer()), 
             Vec::new(), 
@@ -36,7 +37,8 @@ async fn main() -> io::Result<()> {
         ),
         playing_infos: Vec::new(),
         mode: "songs".to_string(),
-        input_editing: "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string(),
+        input_downloading: "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string(),
+        input_modify_playlists: "".to_string(),
         total_downloading_time: 0.0,
         state_download: 0.0,
         downloading_started: false,
@@ -44,6 +46,7 @@ async fn main() -> io::Result<()> {
         all_playlists: Vec::new(),
         active_playlist: "All songs".to_string(),
         is_running: false,
+        is_answer_positive: false,
     };
     let running_app = app.run(&mut terminal).await;
     ratatui::restore();
@@ -54,17 +57,20 @@ pub struct App {
     // Reorganise & reduce this variables (is_running at the end, some variables can maybe get out ...)
     songs_state: TableState,
     playlists_state: TableState,
+    song_to_playlists_state: TableState,
     player: Player,
     playing_infos: Vec<String>,
     mode: String,
-    input_editing: String,
+    input_downloading: String,
+    input_modify_playlists: String,
     total_downloading_time: f64,
     state_download: f64,
     downloading_started: bool,
     all_songs: Vec<HashMap<String, String>>,
-    all_playlists: Vec<String>,
+    all_playlists: Vec<Playlist>,
     active_playlist: String,
     is_running: bool,
+    is_answer_positive: bool,
 }
 
 impl App {
@@ -108,7 +114,7 @@ impl App {
         if !receiver.is_empty() {
             *time_downloading = Instant::now();
             self.total_downloading_time = receiver.recv().await.expect("Can't retrieve estimated downloading duration value !");
-            self.input_editing = format!("Estimated total downloading duration : {}s", self.total_downloading_time as u64);
+            self.input_downloading = format!("Estimated total downloading duration : {}s", self.total_downloading_time as u64);
             self.downloading_started = true;
         }
         if self.downloading_started == true {
@@ -117,7 +123,7 @@ impl App {
         if self.state_download >= 0.99 {
             self.state_download = 0.0;
             self.downloading_started = false;
-            self.input_editing = "Download successfull !".to_string();
+            self.input_downloading = "Download successfull !".to_string();
         }
         
         // Update all songs
@@ -138,19 +144,10 @@ impl App {
     }
 
     // Match key event to dedicated function
+    // Refactor function calls to remove intermediate function calls (enter_action() using match isn't necessary if the right function is directly call)
     async fn handle_key_event(&mut self, key_event: KeyEvent, sender: Sender<f64>) {
-        match self.mode == "download".to_string() {
-            true => {
-                match key_event.code {
-                    KeyCode::Enter                  => { self.download_songs_from_url(self.input_editing.to_string(), sender).await; },
-                    KeyCode::Backspace              => { self.remove_char_from_input(); },
-                    KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
-                    KeyCode::Tab                    => { self.switch_mode(); },
-                    _ => {}
-                }
-            }, 
-
-            false => {
+        match self.mode.as_str() {
+            "songs" => {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
                     KeyCode::Enter                  => { self.enter_action(); },
@@ -160,9 +157,67 @@ impl App {
                     KeyCode::Char('l')              => { self.set_favorites(); },
                     KeyCode::Char(' ')              => { self.pause_play_song(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
+                    KeyCode::Char('a')              => { self.display_popup("add_song"); },
                     _ => {}
                 }
             }
+            "download" => {
+                match key_event.code {
+                    KeyCode::Enter                  => { self.download_songs_from_url(self.input_downloading.to_string(), sender).await; },
+                    KeyCode::Backspace              => { self.remove_char_from_input(); },
+                    KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
+                    KeyCode::Tab                    => { self.switch_mode(); },
+                    _ => {}
+                }
+            }
+            "playlists" => {
+                match key_event.code {
+                    KeyCode::Char('q')              => { self.exit(); },
+                    KeyCode::Enter                  => { self.enter_action(); },
+                    KeyCode::Up                     => { self.previous(); },
+                    KeyCode::Down                   => { self.next(); },
+                    KeyCode::Tab                    => { self.switch_mode(); },
+                    KeyCode::Char('a')              => { self.display_popup("add_playlist"); },
+                    KeyCode::Char('m')              => { self.display_popup("modify_playlist"); },
+                    KeyCode::Delete                 => { self.display_popup("remove_playlist")},
+                    _ => {}
+                }
+            }
+            "add_popup_playlists" => {
+                match key_event.code {
+                    KeyCode::Enter                  => { self.add_or_not_playlist(); },
+                    KeyCode::Tab                    => { self.switch_answer(); },
+                    KeyCode::Esc                    => { self.next_mode(); }
+                    _ => {}
+                }
+            }
+            "modify_popup_playlists" => {
+                match key_event.code {
+                    KeyCode::Enter                  => { self.modify_playlist(); },
+                    KeyCode::Backspace              => { self.remove_char_from_input(); },
+                    KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
+                    KeyCode::Esc                    => { self.next_mode(); }
+                    _ => {}
+                }
+            }
+            "remove_popup_playlists" => {
+                match key_event.code {
+                    KeyCode::Enter                  => { self.remove_or_not_playlist(); },
+                    KeyCode::Tab                    => { self.switch_answer(); },
+                    KeyCode::Esc                    => { self.next_mode(); }
+                    _ => {}
+                }
+            }
+            "add_popup_songs" => {
+                match key_event.code {
+                    KeyCode::Up                     => { self.previous(); },
+                    KeyCode::Down                   => { self.next(); },
+                    KeyCode::Enter                  => { self.add_or_remove_song_to_playlist(); },
+                    KeyCode::Esc                    => { self.next_mode(); }
+                    _ => {}
+                }
+            }
+            &_ => {}
         }
     }
 
@@ -181,7 +236,8 @@ impl App {
 
     // Set the new active playlist
     fn set_active_playlist(&mut self) {
-        self.active_playlist = self.all_playlists[self.playlists_state.selected().expect("Can't retrieve active playlist selected id !")].to_string();
+        let playlist_name = &self.all_playlists[self.playlists_state.selected().expect("Can't retrieve active playlist selected id !")].playlist_name;
+        self.active_playlist = playlist_name.to_string();
     }
 
     // Add song to the queue on key pressed
@@ -189,7 +245,7 @@ impl App {
         let i = self.songs_state.selected();
         if i.is_some() {
             let path = self.all_songs[i.expect("Cannot be a None value !")].get("path");
-            let path = path.as_deref().expect("Unable to make the varibale as ownership !");
+            let path = path.as_deref().expect("Unable to make the variable as ownership !");
             self.player.add_song_to_queue(&path);
         }
     }
@@ -222,6 +278,19 @@ impl App {
                     None => 0,
                 };
                 self.songs_state.select(Some(i));
+            }
+            "add_popup_songs" => {
+                let i = match self.song_to_playlists_state.selected() {
+                    Some(i) => {
+                        if i == 0 {
+                            self.all_playlists.len() - 1
+                        } else {
+                            i - 1
+                        }
+                    }
+                    None => 0,
+                };
+                self.song_to_playlists_state.select(Some(i));
             }
             &_ => {}
         }
@@ -256,6 +325,19 @@ impl App {
                 };
                 self.songs_state.select(Some(i));
             }
+            "add_popup_songs" => {
+                let i = match self.song_to_playlists_state.selected() {
+                    Some(i) => {
+                        if i >= self.all_playlists.len() - 1 {
+                            0
+                        } else {
+                            i + 1
+                        }
+                    }
+                    None => 1,
+                };
+                self.song_to_playlists_state.select(Some(i));
+            }
             &_ => {}
         }
     }
@@ -275,7 +357,7 @@ impl App {
     }
 
     fn switch_mode(&mut self) {
-        self.mode = self.next_mode();
+        self.next_mode();
         match self.mode.as_str() {
             "songs" => {
                 self.songs_state.select(Some(0));
@@ -288,21 +370,99 @@ impl App {
         }
     }
 
-    fn next_mode(&mut self) -> String {
+    fn next_mode(&mut self) {
+        let next_mode: &str;
         match self.mode.as_str() {
             "songs" => {
-                return "download".to_string()
+                next_mode = "download";
             }
             "download" => {
-                return "playlists".to_string()
+                next_mode = "playlists";
             }
             "playlists" => {
-                return "songs".to_string()
+                next_mode = "songs";
+            }
+            "add_popup_playlists" => {
+                next_mode = "playlists";
+            }
+            "modify_popup_playlists" => {
+                next_mode = "playlists";
+            }
+            "remove_popup_playlists" => {
+                next_mode = "playlists";
+            }
+            "add_popup_songs" => {
+                next_mode = "songs";
+            }
+            &_ => {
+                next_mode = "";
+            }
+        }
+
+        self.mode = next_mode.to_string();
+    }
+
+    fn display_popup(&mut self, keyword: &str) {
+        let selected_playlist = &self.all_playlists[self.playlists_state.selected().expect("Can't retrieve active playlist selected id !")].playlist_name;
+        self.is_answer_positive = false;
+        match keyword {
+            "add_playlist" => {
+                self.mode = "add_popup_playlists".to_string();
+            }
+            "modify_playlist" => {
+                if *selected_playlist != "All songs".to_string() && *selected_playlist != "Favorites".to_string() {
+                    self.mode = "modify_popup_playlists".to_string();
+                    self.input_modify_playlists = selected_playlist.to_string();
+                }
+            }
+            "remove_playlist" => {
+                if *selected_playlist != "All songs".to_string() && *selected_playlist != "Favorites".to_string() {
+                    self.mode = "remove_popup_playlists".to_string();
+                }
+            }
+            "add_song" => {
+                self.mode = "add_popup_songs".to_string();
             }
             &_ => {}
         }
+    }
 
-        return "".to_string()
+    fn add_or_not_playlist(&mut self) {
+        if self.is_answer_positive {
+            self.player.add_playlist();
+        }
+        self.next_mode();
+    }
+
+    fn modify_playlist(&mut self) {
+        let i = self.playlists_state.selected();
+        self.player.modify_playlist(i.expect("Cannot be a None value !"), &self.input_modify_playlists);
+        self.next_mode();
+    }
+
+    fn remove_or_not_playlist(&mut self) {
+        if self.is_answer_positive {
+            let i = self.playlists_state.selected();
+            self.player.remove_playlist(i.expect("Cannot be a None value !"));
+        }
+        self.next_mode();
+    }
+
+    fn add_or_remove_song_to_playlist(&mut self) {
+        let song_to_add = self.all_songs[self.songs_state.selected().expect("Can't retrieve selected songs !")]
+            .get("path")
+            .expect("Can't retrieve path of the selected song !")
+            .to_string();
+        let selected_playlist = self.all_playlists[self.song_to_playlists_state.selected().expect("Can't be empty !")]
+            .playlist_name
+            .to_string();
+        self.player.add_or_remove_song_to_playlist(song_to_add, selected_playlist);
+    }
+
+    fn switch_answer(&mut self) {
+        if self.is_answer_positive {
+            self.is_answer_positive = false;
+        } else { self.is_answer_positive = true };
     }
 
     fn set_favorites(&mut self) {
@@ -315,15 +475,33 @@ impl App {
     }
 
     fn remove_char_from_input(&mut self) {
-        self.input_editing.pop();
+        match self.mode.as_str() {
+            "download" => {
+                self.input_downloading.pop();
+            }
+            "modify_popup_playlists" => {
+                self.input_modify_playlists.pop();
+            }
+            &_ => {}
+        }
     }
 
     fn insert_char_into_input(&mut self, new_char: char) {
-        self.input_editing.push_str(&new_char.to_string());
+        match self.mode.as_str() {
+            "download" => {
+                self.input_downloading.push_str(&new_char.to_string());
+            }
+            "modify_popup_playlists" => {
+                if self.input_modify_playlists.len() < 20 {
+                    self.input_modify_playlists.push_str(&new_char.to_string());
+                }
+            }
+            &_ => {}
+        }
     }
 
     async fn download_songs_from_url(&mut self, url: String, sender: Sender<f64>) {
-        self.input_editing = "Starting to fetch datas from YouTube URL ...".to_string();
+        self.input_downloading = "Starting to fetch datas from YouTube URL ...".to_string();
         tokio::spawn( async move {
             let (urls, duration) = music::retrieve_songs_datas_from(&url).await;
             sender.send(duration).await.expect("Can't send estimated downloading time value !");
@@ -359,8 +537,8 @@ impl App {
 
         // Playing section
         let chunks = Layout::vertical([
-            Constraint::Length(4),
-            Constraint::Length(1),
+            Constraint::Length(4),              // Playing informations
+            Constraint::Length(1),              // Duration gauge
         ])
         .margin(1)
         .split(playing);
@@ -414,14 +592,16 @@ impl App {
         ])
         .margin(1)
         .split(download);
-
+        
+        let download_border_style = if self.mode.as_str() == "download" {Color::Magenta} else {Color::Reset};
         let downloading_section = Block::default()
             .title(Line::from("Download URL"))
-            .borders(ratatui::widgets::Borders::ALL);
+            .borders(ratatui::widgets::Borders::ALL)
+            .border_style(download_border_style);
         frame.render_widget(downloading_section, download);
 
         let downloading_label = Span::styled(
-            &self.input_editing,
+            &self.input_downloading,
             Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC),
         );
         let downloading_gauge_section = Gauge::default()
@@ -441,9 +621,10 @@ impl App {
         let mut playlists_datas: Vec<Row> = Vec::new();
         for playlist in &self.all_playlists {
             playlists_datas.push(Row::new(vec![
-                playlist.to_string()
+                playlist.playlist_name.as_str(),
             ]));
         }
+        let playlists_border_style = if self.mode.as_str() == "playlists" {Color::Magenta} else {Color::Reset};
         let playlists_table = Table::new(
             playlists_datas,
             [
@@ -453,6 +634,7 @@ impl App {
                 Block::default()
                 .title(Line::from("Playlists"))
                 .borders(ratatui::widgets::Borders::ALL)
+                .border_style(playlists_border_style)
             )
             .row_highlight_style(Style::default().fg(Color::Magenta))
             .highlight_symbol(Text::from(vec![" █ ".into()]));
@@ -475,18 +657,20 @@ impl App {
             ]));
         }
         let header = Row::new(vec!["Title", "Artist", "Duration", ""]);
+        let songs_border_style = if self.mode.as_str() == "songs" {Color::Magenta} else {Color::Reset};
         let songs_table = Table::new(
             songs_datas,
             [
-                Constraint::Fill(2),
-                Constraint::Fill(1),
-                Constraint::Max(10),
-                Constraint::Max(10),
+                Constraint::Fill(2),                // Song name
+                Constraint::Fill(1),                // Song's artists
+                Constraint::Max(10),                // Song duration
+                Constraint::Max(10),                // Is in favorites or not
             ])
             .block(
                 Block::default()
                 .title(Line::from("Songs"))
                 .borders(ratatui::widgets::Borders::ALL)
+                .border_style(songs_border_style)
             )
             .header(header)
             .row_highlight_style(Style::default().fg(Color::Magenta))
@@ -494,13 +678,147 @@ impl App {
         frame.render_stateful_widget(songs_table, songs, &mut self.songs_state);
 
         // Hotkeys section
-        let mut hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Like/Unlike <L> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
-        if self.mode == "download".to_string() {
-            hotkeys_text = "Download <Enter> - Switch Mode <Tab>";
+        let hotkeys_text: &str;
+        match self.mode.as_str() {
+            "songs" => {
+                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Like/Unlike <L> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
+            }
+            "download" => {
+                hotkeys_text = "Download <Enter> - Switch Mode <Tab>";
+            }
+            "playlists" => {
+                hotkeys_text = "Navigate <Up/Down> - Select <Enter> - New <A> - Modify <M> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
+            }
+            "add_popup_playlists" => {
+                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
+            }
+            "modify_popup_playlists" => {
+                hotkeys_text = "Modify <Enter> - Close <Esc>";
+            }
+            "remove_popup_playlists" => {
+                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
+            }
+            "add_popup_songs" => {
+                hotkeys_text = "Navigate <Up/Down> - Add <Enter> - Close <Esc>";
+            }
+            &_ => {
+                hotkeys_text = "";
+            }
         }
         let hotkeys_section = Block::default()
             .title(Line::from(hotkeys_text).centered());
         frame.render_widget(hotkeys_section, hotkeys);
+
+        // Playlists AND Songs popup (Create/Modify/Delete AND Add)
+        if self.mode.as_str().contains("popup") {
+            let popup_question: String;
+            let answers_type: &str;
+            let answer_height: Constraint;
+
+            match self.mode.as_str() {
+                "add_popup_playlists" => {
+                    popup_question = format!("Do you want to add a new playlist ?");
+                    answers_type = "binary";
+                    answer_height = Constraint::Max(1);
+                }
+                "modify_popup_playlists" => {
+                    popup_question = format!("What's the new name of the selected playlist ?");
+                    answers_type = "input";
+                    answer_height = Constraint::Max(1);
+                }
+                "remove_popup_playlists" => {
+                    popup_question = format!("Do you really want to delete '{}' playlist ?", self.all_playlists[self.playlists_state.selected().expect("Can't be empty !")].playlist_name);
+                    answers_type = "binary";
+                    answer_height = Constraint::Max(1);
+                }
+                "add_popup_songs" => {
+                    popup_question = format!("In which playlist(s) do you want to add '{}' song ?", self.all_songs[self.songs_state.selected().expect("Can't be empty !")].get("title").expect("Can't have an empty title name song !"));
+                    answers_type = "table";
+                    answer_height = Constraint::Max(3);
+                }
+                &_ => {
+                    // Delete a random song (1/1000 chance)
+                    popup_question = format!("Bro, no question here. Just you and me. Choose and good luck !");
+                    answers_type = "binary";
+                    answer_height = Constraint::Max(1);
+                }
+            }
+            let popup = frame.area();
+
+            let vertical = Layout::vertical([Constraint::Length(12)]).flex(Flex::Center);
+            let horizontal = Layout::horizontal([Constraint::Length(50)]).flex(Flex::Center);
+            let [popup] = vertical.areas(popup);
+            let [popup] = horizontal.areas(popup);
+
+            let chunks = Layout::vertical([
+                Constraint::Max(2),                 // Question's popup
+                answer_height,                      // Binary answers OR Input text answer OR Selection table
+            ])
+            .vertical_margin(3)
+            .horizontal_margin(8)
+            .flex(Flex::SpaceBetween)
+            .split(popup);
+
+            frame.render_widget(Clear, popup);
+
+            let popup_block = Block::bordered();
+            frame.render_widget(popup_block, popup);
+
+            let popup_question = Line::from(popup_question).alignment(Alignment::Center);
+            frame.render_widget(Paragraph::new(popup_question).wrap(Wrap { trim: true }), chunks[0]);
+
+            match answers_type {
+                "binary" => {
+                    let positive_answer = "Yes";
+                    let negative_answer = "No";
+
+                    let answers = Layout::horizontal([
+                        Constraint::Length(3 + 4),
+                        Constraint::Length(2 + 4),
+                    ])
+                    .flex(Flex::SpaceBetween)
+                    .split(chunks[1]);
+
+                    let popup_positive_answer = Line::from(positive_answer).alignment(Alignment::Center);
+                    let popup_negative_answer = Line::from(negative_answer).alignment(Alignment::Center);
+                    let popup_positive_answer_style = if self.is_answer_positive {Color::Magenta} else {Color::Reset};
+                    let popup_negative_answer_style = if !self.is_answer_positive {Color::Magenta} else {Color::Reset};
+
+                    frame.render_widget(Paragraph::new(popup_positive_answer)
+                        .style(Style::default().bg(popup_positive_answer_style)), answers[0]);
+                    frame.render_widget(Paragraph::new(popup_negative_answer)
+                        .style(Style::default().bg(popup_negative_answer_style)), answers[1]);
+                }
+                "input" => {
+                    let popup_input_answer = Line::from(self.input_modify_playlists.as_str()).alignment(Alignment::Center);
+                    frame.render_widget(Paragraph::new(popup_input_answer)
+                        .style(Style::default().bg(Color::Magenta).fg(Color::White)), chunks[1]);
+                }
+                "table" => {
+                    let mut playlists_datas: Vec<Row> = Vec::new();
+                    for playlist in &self.all_playlists {
+                        let is_in_playlist = playlist.songs_list.contains(self.all_songs[self.songs_state.selected().expect("Can't be empty !")].get("path").expect("Can't have an empty title name song !"));
+                        let checkbox: &str;
+                        if is_in_playlist {
+                            checkbox = "[X]";
+                        } else { checkbox = "[ ]"; }
+                        playlists_datas.push(Row::new(vec![
+                            checkbox,
+                            &playlist.playlist_name
+                        ]));
+                    }
+                    let selection_table = Table::new(
+                        playlists_datas,
+                        [
+                            Constraint::Length(3),              // Selection box
+                            Constraint::Fill(1),                // Playlist name
+                        ])
+                        .row_highlight_style(Style::default().bg(Color::Magenta).fg(Color::White));
+                    frame.render_stateful_widget(selection_table, chunks[1], &mut self.song_to_playlists_state);
+                }
+                &_ => {}
+            }
+        }
     }
 
     // Exit the app on key pressed

@@ -25,9 +25,9 @@ pub struct Player {
 }
 
 #[derive(Deserialize, Serialize)]
-struct Playlist {
-	playlist_name: String,
-    songs_list: Vec<String>,
+pub struct Playlist {
+	pub playlist_name: String,
+    pub songs_list: Vec<String>,
 }
 
 impl Player {
@@ -203,7 +203,7 @@ impl Player {
 			if playlist.playlist_name == "Favorites" {
 				if playlist.songs_list.contains(&path.to_string()) {
 					// Delete song from 'Favorites' playlist
-					let position = playlist.songs_list.iter().position(|n| n == &path.to_string()).expect("Cant get position of path into JSON file !");
+					let position = playlist.songs_list.iter().position(|n| n == &path.to_string()).expect("Can't get position of path into JSON file !");
 					playlist.songs_list.swap_remove(position);
 				} else {
 					// Add song to 'Favorites' playlist
@@ -227,34 +227,113 @@ impl Player {
 		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
 		let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
 			.expect("Playlists JSON content is not well-formatted !");
-		for playlist in playlists {
-			if &playlist.playlist_name == playlist_name {
-				for song_path in songs_path {
-					let song_infos = self.get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
-					if song_infos.get("is_song").expect("Can't get is_song variable !") == "true" {
-						if playlist_name == &"All songs".to_string() || playlist.songs_list.contains(song_infos.get("path").expect("Can't get path variable !")) {
-							songs.push(song_infos);
+		let is_playlist = playlists.iter().position(|playlist| playlist.playlist_name == *playlist_name);
+		if is_playlist.is_some() {
+			for playlist in playlists {
+				if &playlist.playlist_name == playlist_name {
+					for song_path in songs_path {
+						let song_infos = self.get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
+						if song_infos.get("is_song").expect("Can't get is_song variable !") == "true" {
+							if playlist_name == "All songs" || playlist.songs_list.contains(song_infos.get("path").expect("Can't get path variable !")) {
+								songs.push(song_infos);
+							}
 						}
 					}
+					break;
 				}
-				break;
 			}
 		}
 
 		songs
 	}
 
-	// Return all playlists name
-	pub fn get_all_playlists(&mut self) -> Vec<String> {
-		let mut results = Vec::new();
+	// Return all playlists datas
+	pub fn get_all_playlists(&mut self) -> Vec<Playlist> {
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+
+		playlists
+	}
+
+	// Add a new playlist
+	pub fn add_playlist(&mut self) {
 		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
 		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
 			.expect("Playlists JSON content is not well-formatted !");
-		for playlist in playlists {
-			results.push(playlist.playlist_name);
-		}
 
-		results
+		// Return the next index to set the playlist name
+		let mut index = playlists.len();
+		for i in 0..index {
+			if !playlists.iter().any(|playlist| playlist.playlist_name == format!("Playlist {}", i)) {
+				index = i;
+				break
+			}
+		};
+
+		let new = Playlist {
+			playlist_name: "Playlist ".to_string() + index.to_string().as_str(),
+			songs_list: Vec::new(),
+		};
+		playlists.push(new);
+		let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
+		let mut playlists_writer = BufWriter::new(playlists_file);
+		let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+		let _ = playlists_writer.flush();
+	}
+
+	// Modify the selected playlist
+	pub fn modify_playlist(&mut self, actual_playlist_position: usize, new_playlist_name: &String) {
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+
+		let mut playlist: Playlist = playlists.remove(actual_playlist_position);
+		playlist.playlist_name = new_playlist_name.to_string();
+		playlists.insert(actual_playlist_position, playlist);
+
+		let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
+		let mut playlists_writer = BufWriter::new(playlists_file);
+		let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+		let _ = playlists_writer.flush();
+	}
+
+	// Remove the selected playlist
+	pub fn remove_playlist(&mut self, playlist_position_to_remove: usize) {
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+		// Delete playlist
+		playlists.remove(playlist_position_to_remove);
+		let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
+		let mut playlists_writer = BufWriter::new(playlists_file);
+		let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+		let _ = playlists_writer.flush();
+	}
+
+	// Add OR Remove song from a playlist
+	pub fn add_or_remove_song_to_playlist(&mut self, song_to_add: String, selected_playlist: String) {
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+		for playlist in &mut playlists {
+			if playlist.playlist_name == selected_playlist {
+				if playlist.songs_list.contains(&song_to_add) {
+					// Delete song from the playlist
+					let position = playlist.songs_list.iter().position(|n| *n == song_to_add).expect("Can't get position of path into JSON file !");
+					playlist.songs_list.swap_remove(position);
+				} else {
+					// Add song to the playlist
+					playlist.songs_list.push(song_to_add);
+				}
+
+				let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
+				let mut playlists_writer = BufWriter::new(playlists_file);
+				let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+				let _ = playlists_writer.flush();
+				break;
+			}
+		}
 	}
 }
 
