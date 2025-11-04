@@ -334,7 +334,7 @@ impl App {
                             i + 1
                         }
                     }
-                    None => 1,
+                    None => 0,
                 };
                 self.song_to_playlists_state.select(Some(i));
             }
@@ -456,7 +456,9 @@ impl App {
         let selected_playlist = self.all_playlists[self.song_to_playlists_state.selected().expect("Can't be empty !")]
             .playlist_name
             .to_string();
-        self.player.add_or_remove_song_to_playlist(song_to_add, selected_playlist);
+        if selected_playlist != "All songs".to_string() {
+            self.player.add_or_remove_song_to_playlist(song_to_add, selected_playlist);
+        }
     }
 
     fn switch_answer(&mut self) {
@@ -799,7 +801,7 @@ impl App {
                     for playlist in &self.all_playlists {
                         let is_in_playlist = playlist.songs_list.contains(self.all_songs[self.songs_state.selected().expect("Can't be empty !")].get("path").expect("Can't have an empty title name song !"));
                         let checkbox: &str;
-                        if is_in_playlist {
+                        if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
                             checkbox = "[X]";
                         } else { checkbox = "[ ]"; }
                         playlists_datas.push(Row::new(vec![
