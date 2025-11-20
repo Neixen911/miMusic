@@ -4,14 +4,14 @@ mod music;
 mod controller;
 
 use music::{Player, Playlist};
-use controller::{Controller, PlayingController};
+use controller::{Controller, PlayingController, DownloadingController};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Flex, Layout},
     prelude::{Alignment},
-    style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, Cell, Clear, Gauge, Paragraph, Row, Table, TableState, Wrap},
+    style::{Color, Style},
+    text::{Line, Text},
+    widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
     DefaultTerminal, Frame,
 };
 use rodio::{OutputStreamBuilder, Sink};
@@ -38,11 +38,10 @@ async fn main() -> io::Result<()> {
             Arc::new(AtomicU32::new(0))
         ),
         playing_controller: PlayingController::new(),
+        downloading_controller: DownloadingController::new(),
         mode: "songs".to_string(),
-        input_downloading: "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string(),
         input_modify_playlists: "".to_string(),
         total_downloading_time: 0.0,
-        state_download: 0.0,
         downloading_started: false,
         all_songs: Vec::new(),
         all_playlists: Vec::new(),
@@ -62,11 +61,10 @@ pub struct App {
     song_to_playlists_state: TableState,
     player: Player,
     playing_controller: PlayingController,
+    downloading_controller: DownloadingController,
     mode: String,
-    input_downloading: String,
     input_modify_playlists: String,
     total_downloading_time: f64,
-    state_download: f64,
     downloading_started: bool,
     all_songs: Vec<HashMap<String, String>>,
     all_playlists: Vec<Playlist>,
@@ -116,16 +114,16 @@ impl App {
         if !receiver.is_empty() {
             *time_downloading = Instant::now();
             self.total_downloading_time = receiver.recv().await.expect("Can't retrieve estimated downloading duration value !");
-            self.input_downloading = format!("Estimated total downloading duration : {}s", self.total_downloading_time as u64);
+            self.downloading_controller.input_downloading = format!("Estimated total downloading duration : {}s", self.total_downloading_time as u64);
             self.downloading_started = true;
         }
         if self.downloading_started == true {
-            self.state_download = time_downloading.elapsed().as_secs() as f64 / self.total_downloading_time;
+            self.downloading_controller.state_download = time_downloading.elapsed().as_secs() as f64 / self.total_downloading_time;
         }
-        if self.state_download >= 0.99 {
-            self.state_download = 0.0;
+        if self.downloading_controller.state_download >= 0.99 {
+            self.downloading_controller.state_download = 0.0;
             self.downloading_started = false;
-            self.input_downloading = "Download successfull !".to_string();
+            self.downloading_controller.input_downloading = "Download successfull !".to_string();
         }
         
         // Update all songs
@@ -165,7 +163,7 @@ impl App {
             }
             "download" => {
                 match key_event.code {
-                    KeyCode::Enter                  => { self.download_songs_from_url(self.input_downloading.to_string(), sender).await; },
+                    KeyCode::Enter                  => { self.download_songs_from_url(self.downloading_controller.input_downloading.to_string(), sender).await; },
                     KeyCode::Backspace              => { self.remove_char_from_input(); },
                     KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
                     KeyCode::Tab                    => { self.switch_mode(); },
@@ -481,7 +479,7 @@ impl App {
     fn remove_char_from_input(&mut self) {
         match self.mode.as_str() {
             "download" => {
-                self.input_downloading.pop();
+                self.downloading_controller.input_downloading.pop();
             }
             "modify_popup_playlists" => {
                 self.input_modify_playlists.pop();
@@ -493,7 +491,7 @@ impl App {
     fn insert_char_into_input(&mut self, new_char: char) {
         match self.mode.as_str() {
             "download" => {
-                self.input_downloading.push_str(&new_char.to_string());
+                self.downloading_controller.input_downloading.push_str(&new_char.to_string());
             }
             "modify_popup_playlists" => {
                 if self.input_modify_playlists.len() < 20 {
@@ -505,7 +503,7 @@ impl App {
     }
 
     async fn download_songs_from_url(&mut self, url: String, sender: Sender<f64>) {
-        self.input_downloading = "Starting to fetch datas from YouTube URL ...".to_string();
+        self.downloading_controller.input_downloading = "Starting to fetch datas from YouTube URL ...".to_string();
         tokio::spawn( async move {
             let (urls, duration) = music::retrieve_songs_datas_from(&url).await;
             sender.send(duration).await.expect("Can't send estimated downloading time value !");
@@ -540,30 +538,7 @@ impl App {
         frame.render_widget(app_text, app);
 
         self.playing_controller.render(frame, playing);
-
-        // Download section
-        let chunks = Layout::vertical([
-            Constraint::Length(3),
-        ])
-        .margin(1)
-        .split(download);
-        
-        let download_border_style = if self.mode.as_str() == "download" {Color::Magenta} else {Color::Reset};
-        let downloading_section = Block::default()
-            .title(Line::from("Download URL"))
-            .borders(ratatui::widgets::Borders::ALL)
-            .border_style(download_border_style);
-        frame.render_widget(downloading_section, download);
-
-        let downloading_label = Span::styled(
-            &self.input_downloading,
-            Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC),
-        );
-        let downloading_gauge_section = Gauge::default()
-            .ratio(self.state_download)
-            .gauge_style(Color::Magenta)
-            .label(downloading_label);
-        frame.render_widget(downloading_gauge_section, chunks[0]);
+        self.downloading_controller.render(frame, download);
 
         // Playlists & Songs section
         let horizontal = Layout::horizontal([
