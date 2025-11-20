@@ -1,8 +1,10 @@
 #![feature(str_split_remainder)]
 
 mod music;
+mod controller;
 
 use music::{Player, Playlist};
+use controller::{Controller, PlayingController};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Flex, Layout},
@@ -35,7 +37,7 @@ async fn main() -> io::Result<()> {
             Vec::new(), 
             Arc::new(AtomicU32::new(0))
         ),
-        playing_infos: Vec::new(),
+        playing_controller: PlayingController::new(),
         mode: "songs".to_string(),
         input_downloading: "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string(),
         input_modify_playlists: "".to_string(),
@@ -59,7 +61,7 @@ pub struct App {
     playlists_state: TableState,
     song_to_playlists_state: TableState,
     player: Player,
-    playing_infos: Vec<String>,
+    playing_controller: PlayingController,
     mode: String,
     input_downloading: String,
     input_modify_playlists: String,
@@ -76,7 +78,7 @@ pub struct App {
 impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
-        self.playing_infos = self.player.get_current_song_info();
+        self.playing_controller.playing_infos = self.player.get_current_song_info();
         self.all_songs = self.player.get_all_songs_from_active_playlist(&self.active_playlist);
         self.all_playlists = self.player.get_all_playlists();
 
@@ -108,7 +110,7 @@ impl App {
     // Function to update all datas
     async fn update_datas(&mut self, time_downloading: &mut Instant, receiver: &mut Receiver<f64>) {
         // Update data in playing section
-        self.playing_infos = self.player.get_current_song_info();
+        self.playing_controller.playing_infos = self.player.get_current_song_info();
 
         // Update progress bar during downloading song(s)
         if !receiver.is_empty() {
@@ -537,56 +539,7 @@ impl App {
             .title(Line::from(" miMusic ").centered());
         frame.render_widget(app_text, app);
 
-        // Playing section
-        let chunks = Layout::vertical([
-            Constraint::Length(4),              // Playing informations
-            Constraint::Length(1),              // Duration gauge
-        ])
-        .margin(1)
-        .split(playing);
-
-        let playing_section = Block::default()
-            .title(Line::from("Now Playing"))
-            .borders(ratatui::widgets::Borders::ALL);
-        frame.render_widget(playing_section, playing);
-
-        let mut playing_lines: Vec<Line> = Vec::new();
-        playing_lines.push(Line::from(self.playing_infos.get(0).expect("Unable to get title from current playing song !").to_string()));
-        playing_lines.push(Line::from(self.playing_infos.get(1).expect("Unable to get artist from current playing song !").to_string()));
-        let infos_section = Paragraph::new(playing_lines);
-        frame.render_widget(infos_section, chunks[0]);
-
-        let act_duration_song = self.playing_infos.get(2)
-            .expect("Unable to get current duration from current playing song !")
-            .to_string()
-            .parse::<f64>()
-            .expect("Unable to convert into f64 !");
-        let max_duration_song = self.playing_infos.get(3)
-            .expect("Unable to get maximum duration from current playing song !")
-            .to_string()
-            .parse::<f64>()
-            .expect("Unable to convert into f64 !");
-        let mut ratio = 0.0;
-        let (act_minutes, act_seconds) = Self::seconds_to_minsec(act_duration_song);
-        let (max_minutes, max_seconds) = Self::seconds_to_minsec(max_duration_song);
-        let playing_label = Span::styled(
-            format!("{:02}", act_minutes) 
-            + ":" 
-            + format!("{:02}", act_seconds).as_str() 
-            + " / " 
-            + format!("{:02}", max_minutes).as_str() 
-            + ":" 
-            + format!("{:02}", max_seconds).as_str(),
-            Style::default(),
-        );
-        if max_duration_song != 0.0 {
-            ratio = act_duration_song / max_duration_song;
-        }
-        let playing_gauge_section = Gauge::default()
-            .ratio(ratio)
-            .gauge_style(Color::Magenta)
-            .label(playing_label);
-        frame.render_widget(playing_gauge_section, chunks[1]);
+        self.playing_controller.render(frame, playing);
 
         // Download section
         let chunks = Layout::vertical([
