@@ -1,10 +1,10 @@
 #![feature(str_split_remainder)]
 
 mod music;
-mod controller;
+mod service;
 
-use music::{Player, Playlist};
-use controller::{Controller, PlayingController, DownloadingController};
+use music::Player;
+use service::{Service, PlayingService, DownloadingService, PlaylistsService};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Flex, Layout},
@@ -30,22 +30,20 @@ async fn main() -> io::Result<()> {
     stream_handle.log_on_drop(false);
     let mut app = App {
         songs_state: TableState::default().with_selected(0),
-        playlists_state: TableState::default().with_selected(0),
         song_to_playlists_state: TableState::default().with_selected(0),
         player: Player::new(
             Sink::connect_new(stream_handle.mixer()), 
             Vec::new(), 
             Arc::new(AtomicU32::new(0))
         ),
-        playing_controller: PlayingController::new(),
-        downloading_controller: DownloadingController::new(),
+        playing_service: PlayingService::new(),
+        downloading_service: DownloadingService::new(),
+        playlists_service: PlaylistsService::new(),
         mode: "songs".to_string(),
         input_modify_playlists: "".to_string(),
         total_downloading_time: 0.0,
         downloading_started: false,
         all_songs: Vec::new(),
-        all_playlists: Vec::new(),
-        active_playlist: "All songs".to_string(),
         is_running: false,
         is_answer_positive: false,
     };
@@ -57,18 +55,16 @@ async fn main() -> io::Result<()> {
 pub struct App {
     // Reorganise & reduce this variables (is_running at the end, some variables can maybe get out ...)
     songs_state: TableState,
-    playlists_state: TableState,
     song_to_playlists_state: TableState,
     player: Player,
-    playing_controller: PlayingController,
-    downloading_controller: DownloadingController,
+    playing_service: PlayingService,
+    downloading_service: DownloadingService,
+    playlists_service: PlaylistsService,
     mode: String,
     input_modify_playlists: String,
     total_downloading_time: f64,
     downloading_started: bool,
     all_songs: Vec<HashMap<String, String>>,
-    all_playlists: Vec<Playlist>,
-    active_playlist: String,
     is_running: bool,
     is_answer_positive: bool,
 }
@@ -76,9 +72,9 @@ pub struct App {
 impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
-        self.playing_controller.playing_infos = self.player.get_current_song_info();
-        self.all_songs = self.player.get_all_songs_from_active_playlist(&self.active_playlist);
-        self.all_playlists = self.player.get_all_playlists();
+        self.playing_service.playing_infos = self.player.get_current_song_info();
+        self.all_songs = self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist());
+        self.playlists_service.set_all_playlists(self.player.get_all_playlists());
 
         let (sender, mut receiver) = mpsc::channel(1);
 
@@ -108,29 +104,29 @@ impl App {
     // Function to update all datas
     async fn update_datas(&mut self, time_downloading: &mut Instant, receiver: &mut Receiver<f64>) {
         // Update data in playing section
-        self.playing_controller.playing_infos = self.player.get_current_song_info();
+        self.playing_service.playing_infos = self.player.get_current_song_info();
 
         // Update progress bar during downloading song(s)
         if !receiver.is_empty() {
             *time_downloading = Instant::now();
             self.total_downloading_time = receiver.recv().await.expect("Can't retrieve estimated downloading duration value !");
-            self.downloading_controller.input_downloading = format!("Estimated total downloading duration : {}s", self.total_downloading_time as u64);
+            self.downloading_service.input_downloading = format!("Estimated total downloading duration : {}s", self.total_downloading_time as u64);
             self.downloading_started = true;
         }
         if self.downloading_started == true {
-            self.downloading_controller.state_download = time_downloading.elapsed().as_secs() as f64 / self.total_downloading_time;
+            self.downloading_service.state_download = time_downloading.elapsed().as_secs() as f64 / self.total_downloading_time;
         }
-        if self.downloading_controller.state_download >= 0.99 {
-            self.downloading_controller.state_download = 0.0;
+        if self.downloading_service.state_download >= 0.99 {
+            self.downloading_service.state_download = 0.0;
             self.downloading_started = false;
-            self.downloading_controller.input_downloading = "Download successfull !".to_string();
+            self.downloading_service.input_downloading = "Download successfull !".to_string();
         }
         
         // Update all songs
-        self.all_songs = self.player.get_all_songs_from_active_playlist(&self.active_playlist);
+        self.all_songs = self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist());
 
         // Update all playlists
-        self.all_playlists = self.player.get_all_playlists();
+        self.playlists_service.set_all_playlists(self.player.get_all_playlists());
     }
 
     // Retrieve keys events
@@ -163,7 +159,7 @@ impl App {
             }
             "download" => {
                 match key_event.code {
-                    KeyCode::Enter                  => { self.download_songs_from_url(self.downloading_controller.input_downloading.to_string(), sender).await; },
+                    KeyCode::Enter                  => { self.download_songs_from_url(self.downloading_service.input_downloading.to_string(), sender).await; },
                     KeyCode::Backspace              => { self.remove_char_from_input(); },
                     KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
                     KeyCode::Tab                    => { self.switch_mode(); },
@@ -174,8 +170,8 @@ impl App {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
                     KeyCode::Enter                  => { self.enter_action(); },
-                    KeyCode::Up                     => { self.previous(); },
-                    KeyCode::Down                   => { self.next(); },
+                    KeyCode::Up                     => { self.playlists_service.previous(); },
+                    KeyCode::Down                   => { self.playlists_service.next(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     KeyCode::Char('a')              => { self.display_popup("add_playlist"); },
                     KeyCode::Char('m')              => { self.display_popup("modify_playlist"); },
@@ -225,19 +221,14 @@ impl App {
     fn enter_action(&mut self) {
         match self.mode.as_str() {
             "playlists" => {
-                self.set_active_playlist();
+                let playlist_name = &self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name;
+                self.playlists_service.set_active_playlist(playlist_name.to_string());
             }
             "songs" => {
                 self.add_song_to_queue();
             }
             &_ => {}
         }
-    }
-
-    // Set the new active playlist
-    fn set_active_playlist(&mut self) {
-        let playlist_name = &self.all_playlists[self.playlists_state.selected().expect("Can't retrieve active playlist selected id !")].playlist_name;
-        self.active_playlist = playlist_name.to_string();
     }
 
     // Add song to the queue on key pressed
@@ -253,19 +244,6 @@ impl App {
     // Select previous one in active table on key pressed
     fn previous(&mut self) {
         match self.mode.as_str() {
-            "playlists" => {
-                let i = match self.playlists_state.selected() {
-                    Some(i) => {
-                        if i == 0 {
-                            self.all_playlists.len() - 1
-                        } else {
-                            i - 1
-                        }
-                    }
-                    None => 0,
-                };
-                self.playlists_state.select(Some(i));
-            }
             "songs" => {
                 let i = match self.songs_state.selected() {
                     Some(i) => {
@@ -283,7 +261,7 @@ impl App {
                 let i = match self.song_to_playlists_state.selected() {
                     Some(i) => {
                         if i == 0 {
-                            self.all_playlists.len() - 1
+                            self.playlists_service.get_all_playlists().len() - 1
                         } else {
                             i - 1
                         }
@@ -299,19 +277,6 @@ impl App {
     // Select next one in active table on key pressed
     fn next(&mut self) {
         match self.mode.as_str() {
-            "playlists" => {
-                let i = match self.playlists_state.selected() {
-                    Some(i) => {
-                        if i >= self.all_playlists.len() - 1 {
-                            0
-                        } else {
-                            i + 1
-                        }
-                    }
-                    None => 0,
-                };
-                self.playlists_state.select(Some(i));
-            }
             "songs" => {
                 let i = match self.songs_state.selected() {
                     Some(i) => {
@@ -328,7 +293,7 @@ impl App {
             "add_popup_songs" => {
                 let i = match self.song_to_playlists_state.selected() {
                     Some(i) => {
-                        if i >= self.all_playlists.len() - 1 {
+                        if i >= self.playlists_service.get_all_playlists().len() - 1 {
                             0
                         } else {
                             i + 1
@@ -403,7 +368,7 @@ impl App {
     }
 
     fn display_popup(&mut self, keyword: &str) {
-        let selected_playlist = &self.all_playlists[self.playlists_state.selected().expect("Can't retrieve active playlist selected id !")].playlist_name;
+        let selected_playlist = &self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name;
         self.is_answer_positive = false;
         match keyword {
             "add_playlist" => {
@@ -435,15 +400,15 @@ impl App {
     }
 
     fn modify_playlist(&mut self) {
-        let i = self.playlists_state.selected();
-        self.player.modify_playlist(i.expect("Cannot be a None value !"), &self.input_modify_playlists);
+        let i = self.playlists_service.get_playlists_state();
+        self.player.modify_playlist(i, &self.input_modify_playlists);
         self.next_mode();
     }
 
     fn remove_or_not_playlist(&mut self) {
         if self.is_answer_positive {
-            let i = self.playlists_state.selected();
-            self.player.remove_playlist(i.expect("Cannot be a None value !"));
+            let i = self.playlists_service.get_playlists_state();
+            self.player.remove_playlist(i);
         }
         self.next_mode();
     }
@@ -453,7 +418,7 @@ impl App {
             .get("path")
             .expect("Can't retrieve path of the selected song !")
             .to_string();
-        let selected_playlist = self.all_playlists[self.song_to_playlists_state.selected().expect("Can't be empty !")]
+        let selected_playlist = self.playlists_service.get_all_playlists()[self.song_to_playlists_state.selected().expect("Can't be empty !")]
             .playlist_name
             .to_string();
         if selected_playlist != "All songs".to_string() {
@@ -479,7 +444,7 @@ impl App {
     fn remove_char_from_input(&mut self) {
         match self.mode.as_str() {
             "download" => {
-                self.downloading_controller.input_downloading.pop();
+                self.downloading_service.input_downloading.pop();
             }
             "modify_popup_playlists" => {
                 self.input_modify_playlists.pop();
@@ -491,7 +456,7 @@ impl App {
     fn insert_char_into_input(&mut self, new_char: char) {
         match self.mode.as_str() {
             "download" => {
-                self.downloading_controller.input_downloading.push_str(&new_char.to_string());
+                self.downloading_service.input_downloading.push_str(&new_char.to_string());
             }
             "modify_popup_playlists" => {
                 if self.input_modify_playlists.len() < 20 {
@@ -503,7 +468,7 @@ impl App {
     }
 
     async fn download_songs_from_url(&mut self, url: String, sender: Sender<f64>) {
-        self.downloading_controller.input_downloading = "Starting to fetch datas from YouTube URL ...".to_string();
+        self.downloading_service.input_downloading = "Starting to fetch datas from YouTube URL ...".to_string();
         tokio::spawn( async move {
             let (urls, duration) = music::retrieve_songs_datas_from(&url).await;
             sender.send(duration).await.expect("Can't send estimated downloading time value !");
@@ -536,9 +501,12 @@ impl App {
         let app_text = Block::default()
             .title(Line::from(" miMusic ").centered());
         frame.render_widget(app_text, app);
+        
+        // Playing section
+        self.playing_service.render(frame, playing);
 
-        self.playing_controller.render(frame, playing);
-        self.downloading_controller.render(frame, download);
+        // Downloading section
+        self.downloading_service.render(frame, download);
 
         // Playlists & Songs section
         let horizontal = Layout::horizontal([
@@ -547,7 +515,7 @@ impl App {
         ]);
         let [playlists, songs] = horizontal.areas(playlists_songs);
 
-        // Playlists section
+        /*// Playlists section
         let mut playlists_datas: Vec<Row> = Vec::new();
         for playlist in &self.all_playlists {
             playlists_datas.push(Row::new(vec![
@@ -568,7 +536,8 @@ impl App {
             )
             .row_highlight_style(Style::default().fg(Color::Magenta))
             .highlight_symbol(Text::from(vec![" █ ".into()]));
-        frame.render_stateful_widget(playlists_table, playlists, &mut self.playlists_state);
+        frame.render_stateful_widget(playlists_table, playlists, &mut self.playlists_state);*/
+        self.playlists_service.render(frame, playlists);
 
         // Songs section
         let mut songs_datas: Vec<Row> = Vec::new();
@@ -657,7 +626,7 @@ impl App {
                     answer_height = Constraint::Max(1);
                 }
                 "remove_popup_playlists" => {
-                    popup_question = format!("Do you really want to delete '{}' playlist ?", self.all_playlists[self.playlists_state.selected().expect("Can't be empty !")].playlist_name);
+                    popup_question = format!("Do you really want to delete '{}' playlist ?", self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name);
                     answers_type = "binary";
                     answer_height = Constraint::Max(1);
                 }
@@ -726,7 +695,7 @@ impl App {
                 }
                 "table" => {
                     let mut playlists_datas: Vec<Row> = Vec::new();
-                    for playlist in &self.all_playlists {
+                    for playlist in self.playlists_service.get_all_playlists() {
                         let is_in_playlist = playlist.songs_list.contains(self.all_songs[self.songs_state.selected().expect("Can't be empty !")].get("path").expect("Can't have an empty title name song !"));
                         let checkbox: &str;
                         if is_in_playlist || playlist.playlist_name == "All songs".to_string() {

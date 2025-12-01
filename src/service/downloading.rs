@@ -1,4 +1,4 @@
-use super::Controller;
+use super::Service;
 
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -8,22 +8,22 @@ use ratatui::{
     Frame
 };
 
-pub struct DownloadingController {
+pub struct DownloadingService {
     pub input_downloading: String,
     pub state_download: f64
 }
 
-impl DownloadingController {
+impl DownloadingService {
     pub fn new() -> Self {
-        DownloadingController {
+        DownloadingService {
             input_downloading: "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string(),
             state_download: 0.0
         }
     }
 }
 
-impl Controller for DownloadingController {
-    fn render(&self, frame: &mut Frame, area: Rect) {
+impl Service for DownloadingService {
+    fn render(&mut self, frame: &mut Frame, area: Rect) {
         let chunks = Layout::vertical([
             Constraint::Length(3),
         ])

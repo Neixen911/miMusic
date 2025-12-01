@@ -1,4 +1,4 @@
-use super::Controller;
+use super::Service;
 
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -8,13 +8,13 @@ use ratatui::{
     Frame
 };
 
-pub struct PlayingController {
+pub struct PlayingService {
     pub playing_infos: Vec<String>
 }
 
-impl PlayingController {
+impl PlayingService {
     pub fn new() -> Self {
-        PlayingController {
+        PlayingService {
             playing_infos: Vec::new()
         }
     }
@@ -28,8 +28,8 @@ impl PlayingController {
     }
 }
 
-impl Controller for PlayingController {
-    fn render(&self, frame: &mut Frame, area: Rect) {
+impl Service for PlayingService {
+    fn render(&mut self, frame: &mut Frame, area: Rect) {
         let chunks = Layout::vertical([
             Constraint::Length(4),              // Playing informations
             Constraint::Length(1),              // Duration gauge
