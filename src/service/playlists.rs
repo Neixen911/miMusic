@@ -10,9 +10,9 @@ use ratatui::{
 };
 
 pub struct PlaylistsService {
-    pub active_playlist: String,
-    pub all_playlists: Vec<Playlist>,
-    pub playlists_state: TableState
+    active_playlist: String,
+    all_playlists: Vec<Playlist>,
+    playlists_state: TableState
 }
 
 impl PlaylistsService {
