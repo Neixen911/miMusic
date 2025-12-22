@@ -16,9 +16,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Install
-      run: sudo apt-get install libasound2-dev
-    - name: Release
+    - name: Rust toolchain version to nightly
       run: rustup default nightly
-    - name: Build
-      run: cargo build --verbose
+    - name: Build miMusic
+      run: cargo build --bin miMusic --verbose
