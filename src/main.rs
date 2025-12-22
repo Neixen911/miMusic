@@ -4,19 +4,18 @@ mod music;
 mod service;
 
 use music::Player;
-use service::{Service, PlayingService, DownloadingService, PlaylistsService};
+use service::{Service, PlayingService, DownloadingService, PlaylistsService, SongsService};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Flex, Layout},
     prelude::{Alignment},
     style::{Color, Style},
-    text::{Line, Text},
-    widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
+    text::{Line},
+    widgets::{Block, Clear, Paragraph, Row, Table, TableState, Wrap},
     DefaultTerminal, Frame,
 };
 use rodio::{OutputStreamBuilder, Sink};
 use std::io;
-use std::collections::HashMap;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -29,7 +28,6 @@ async fn main() -> io::Result<()> {
     let mut stream_handle = OutputStreamBuilder::open_default_stream().expect("Unable to get OutputStreamBuilder !");
     stream_handle.log_on_drop(false);
     let mut app = App {
-        songs_state: TableState::default().with_selected(0),
         song_to_playlists_state: TableState::default().with_selected(0),
         player: Player::new(
             Sink::connect_new(stream_handle.mixer()), 
@@ -39,11 +37,11 @@ async fn main() -> io::Result<()> {
         playing_service: PlayingService::new(),
         downloading_service: DownloadingService::new(),
         playlists_service: PlaylistsService::new(),
+        songs_service: SongsService::new(),
         mode: "songs".to_string(),
         input_modify_playlists: "".to_string(),
         total_downloading_time: 0.0,
         downloading_started: false,
-        all_songs: Vec::new(),
         is_running: false,
         is_answer_positive: false,
     };
@@ -54,17 +52,16 @@ async fn main() -> io::Result<()> {
 
 pub struct App {
     // Reorganise & reduce this variables (is_running at the end, some variables can maybe get out ...)
-    songs_state: TableState,
     song_to_playlists_state: TableState,
     player: Player,
     playing_service: PlayingService,
     downloading_service: DownloadingService,
     playlists_service: PlaylistsService,
+    songs_service: SongsService,
     mode: String,
     input_modify_playlists: String,
     total_downloading_time: f64,
     downloading_started: bool,
-    all_songs: Vec<HashMap<String, String>>,
     is_running: bool,
     is_answer_positive: bool,
 }
@@ -73,7 +70,7 @@ impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
         self.playing_service.playing_infos = self.player.get_current_song_info();
-        self.all_songs = self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist());
+        self.songs_service.set_all_songs(self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
         self.playlists_service.set_all_playlists(self.player.get_all_playlists());
 
         let (sender, mut receiver) = mpsc::channel(1);
@@ -123,7 +120,7 @@ impl App {
         }
         
         // Update all songs
-        self.all_songs = self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist());
+        self.songs_service.set_all_songs(self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
 
         // Update all playlists
         self.playlists_service.set_all_playlists(self.player.get_all_playlists());
@@ -147,8 +144,8 @@ impl App {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
                     KeyCode::Enter                  => { self.enter_action(); },
-                    KeyCode::Up                     => { self.previous(); },
-                    KeyCode::Down                   => { self.next(); },
+                    KeyCode::Up                     => { self.songs_service.previous(); },
+                    KeyCode::Down                   => { self.songs_service.next(); },
                     KeyCode::Right                  => { self.skip_song(); },
                     KeyCode::Char('l')              => { self.set_favorites(); },
                     KeyCode::Char(' ')              => { self.pause_play_song(); },
@@ -233,9 +230,9 @@ impl App {
 
     // Add song to the queue on key pressed
     fn add_song_to_queue(&mut self) {
-        let i = self.songs_state.selected();
+        let i = self.songs_service.get_songs_state();
         if i.is_some() {
-            let path = self.all_songs[i.expect("Cannot be a None value !")].get("path");
+            let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")].get("path");
             let path = path.as_deref().expect("Unable to make the variable as ownership !");
             self.player.add_song_to_queue(&path);
         }
@@ -244,19 +241,6 @@ impl App {
     // Select previous one in active table on key pressed
     fn previous(&mut self) {
         match self.mode.as_str() {
-            "songs" => {
-                let i = match self.songs_state.selected() {
-                    Some(i) => {
-                        if i == 0 {
-                            self.all_songs.len() - 1
-                        } else {
-                            i - 1
-                        }
-                    }
-                    None => 0,
-                };
-                self.songs_state.select(Some(i));
-            }
             "add_popup_songs" => {
                 let i = match self.song_to_playlists_state.selected() {
                     Some(i) => {
@@ -277,19 +261,6 @@ impl App {
     // Select next one in active table on key pressed
     fn next(&mut self) {
         match self.mode.as_str() {
-            "songs" => {
-                let i = match self.songs_state.selected() {
-                    Some(i) => {
-                        if i >= self.all_songs.len() - 1 {
-                            0
-                        } else {
-                            i + 1
-                        }
-                    }
-                    None => 0,
-                };
-                self.songs_state.select(Some(i));
-            }
             "add_popup_songs" => {
                 let i = match self.song_to_playlists_state.selected() {
                     Some(i) => {
@@ -325,10 +296,10 @@ impl App {
         self.next_mode();
         match self.mode.as_str() {
             "songs" => {
-                self.songs_state.select(Some(0));
+                self.songs_service.set_songs_state(Some(0));
             }
             "download" => {
-                self.songs_state.select(None);
+                self.songs_service.set_songs_state(None);
             }
             "playlists" => {}
             &_ => {}
@@ -414,7 +385,7 @@ impl App {
     }
 
     fn add_or_remove_song_to_playlist(&mut self) {
-        let song_to_add = self.all_songs[self.songs_state.selected().expect("Can't retrieve selected songs !")]
+        let song_to_add = self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")]
             .get("path")
             .expect("Can't retrieve path of the selected song !")
             .to_string();
@@ -433,9 +404,9 @@ impl App {
     }
 
     fn set_favorites(&mut self) {
-        let i = self.songs_state.selected();
+        let i = self.songs_service.get_songs_state();
         if i.is_some() {
-            let path = self.all_songs[i.expect("Cannot be a None value !")].get("path");
+            let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")].get("path");
             let path = path.as_deref().expect("Unable to make the varibale as ownership !");
             self.player.set_favorites(&path);
         }
@@ -478,14 +449,6 @@ impl App {
         });
     }
 
-    // Convert seconds to minutes/seconds
-    fn seconds_to_minsec(seconds: f64) -> (u32, u32) {
-        let min = (seconds / 60.0).floor() as u32;
-        let sec = (seconds % 60.0).round() as u32;
-
-        (min, sec)
-    }
-
     // Draw TUI app
     fn draw(&mut self, frame: &mut Frame) {
         let vertical = Layout::vertical([
@@ -515,72 +478,51 @@ impl App {
         ]);
         let [playlists, songs] = horizontal.areas(playlists_songs);
 
-        /*// Playlists section
-        let mut playlists_datas: Vec<Row> = Vec::new();
-        for playlist in &self.all_playlists {
-            playlists_datas.push(Row::new(vec![
-                playlist.playlist_name.as_str(),
-            ]));
-        }
-        let playlists_border_style = if self.mode.as_str() == "playlists" {Color::Magenta} else {Color::Reset};
-        let playlists_table = Table::new(
-            playlists_datas,
-            [
-                Constraint::Fill(1),
-            ])
-            .block(
-                Block::default()
-                .title(Line::from("Playlists"))
-                .borders(ratatui::widgets::Borders::ALL)
-                .border_style(playlists_border_style)
-            )
-            .row_highlight_style(Style::default().fg(Color::Magenta))
-            .highlight_symbol(Text::from(vec![" █ ".into()]));
-        frame.render_stateful_widget(playlists_table, playlists, &mut self.playlists_state);*/
         self.playlists_service.render(frame, playlists);
+        self.songs_service.render(frame, songs);
 
         // Songs section
-        let mut songs_datas: Vec<Row> = Vec::new();
-        for song in &self.all_songs {
-            let (min, sec) = Self::seconds_to_minsec(song.get("duration")
-                .expect("Unable to get song duration !")
-                .to_string()
-                .parse::<f64>()
-                .expect("Unable to convert into f64 !"));
-            let duration = format!("{:02}", min) + ":" + format!("{:02}", sec).as_str();
-            songs_datas.push(Row::new(vec![
-                Cell::from(Text::from(song.get("title").expect("Unable to get title from song !").to_string())),
-                Cell::from(Text::from(song.get("artist").expect("Unable to get artist from song !").to_string())),
-                Cell::from(Text::from(duration)),
-                Cell::from(Text::from(song.get("is_favorite").expect("Unable to get is_favorite from song !").to_string()).alignment(Alignment::Center)),
-            ]));
-        }
-        let header = Row::new(vec!["Title", "Artist", "Duration", ""]);
-        let songs_border_style = if self.mode.as_str() == "songs" {Color::Magenta} else {Color::Reset};
-        let songs_table = Table::new(
-            songs_datas,
-            [
-                Constraint::Fill(2),                // Song name
-                Constraint::Fill(1),                // Song's artists
-                Constraint::Max(10),                // Song duration
-                Constraint::Max(10),                // Is in favorites or not
-            ])
-            .block(
-                Block::default()
-                .title(Line::from("Songs"))
-                .borders(ratatui::widgets::Borders::ALL)
-                .border_style(songs_border_style)
-            )
-            .header(header)
-            .row_highlight_style(Style::default().fg(Color::Magenta))
-            .highlight_symbol(Text::from(vec![" █ ".into()]));
-        frame.render_stateful_widget(songs_table, songs, &mut self.songs_state);
+        // let mut songs_datas: Vec<Row> = Vec::new();
+        // for song in &self.all_songs {
+        //     let (min, sec) = Self::seconds_to_minsec(song.get("duration")
+        //         .expect("Unable to get song duration !")
+        //         .to_string()
+        //         .parse::<f64>()
+        //         .expect("Unable to convert into f64 !"));
+        //     let duration = format!("{:02}", min) + ":" + format!("{:02}", sec).as_str();
+        //     songs_datas.push(Row::new(vec![
+        //         Cell::from(Text::from(song.get("title").expect("Unable to get title from song !").to_string())),
+        //         Cell::from(Text::from(song.get("artist").expect("Unable to get artist from song !").to_string())),
+        //         Cell::from(Text::from(duration)),
+        //         Cell::from(Text::from(song.get("is_favorite").expect("Unable to get is_favorite from song !").to_string()).alignment(Alignment::Center)),
+        //     ]));
+        // }
+        // let header = Row::new(vec!["Title", "Artist", "Duration", ""]);
+        // let songs_border_style = if self.mode.as_str() == "songs" {Color::Magenta} else {Color::Reset};
+        // let songs_table = Table::new(
+        //     songs_datas,
+        //     [
+        //         Constraint::Fill(2),                // Song name
+        //         Constraint::Fill(1),                // Song's artists
+        //         Constraint::Max(10),                // Song duration
+        //         Constraint::Max(10),                // Is in favorites or not
+        //     ])
+        //     .block(
+        //         Block::default()
+        //         .title(Line::from("Songs"))
+        //         .borders(ratatui::widgets::Borders::ALL)
+        //         .border_style(songs_border_style)
+        //     )
+        //     .header(header)
+        //     .row_highlight_style(Style::default().fg(Color::Magenta))
+        //     .highlight_symbol(Text::from(vec![" █ ".into()]));
+        // frame.render_stateful_widget(songs_table, songs, &mut self.songs_state);
 
         // Hotkeys section
         let hotkeys_text: &str;
         match self.mode.as_str() {
             "songs" => {
-                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Like/Unlike <L> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Like/Unlike <L> - Add to playlist <A> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
             }
             "download" => {
                 hotkeys_text = "Download <Enter> - Switch Mode <Tab>";
@@ -631,7 +573,7 @@ impl App {
                     answer_height = Constraint::Max(1);
                 }
                 "add_popup_songs" => {
-                    popup_question = format!("In which playlist(s) do you want to add '{}' song ?", self.all_songs[self.songs_state.selected().expect("Can't be empty !")].get("title").expect("Can't have an empty title name song !"));
+                    popup_question = format!("In which playlist(s) do you want to add '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
                     answers_type = "table";
                     answer_height = Constraint::Max(3);
                 }
@@ -696,7 +638,7 @@ impl App {
                 "table" => {
                     let mut playlists_datas: Vec<Row> = Vec::new();
                     for playlist in self.playlists_service.get_all_playlists() {
-                        let is_in_playlist = playlist.songs_list.contains(self.all_songs[self.songs_state.selected().expect("Can't be empty !")].get("path").expect("Can't have an empty title name song !"));
+                        let is_in_playlist = playlist.songs_list.contains(self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("path").expect("Can't have an empty title name song !"));
                         let checkbox: &str;
                         if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
                             checkbox = "[X]";
