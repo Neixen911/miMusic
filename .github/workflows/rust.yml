@@ -1,4 +1,4 @@
-name: Rust
+name: Building miMusic
 
 on:
   push:
@@ -20,5 +20,7 @@ jobs:
       run: sudo apt-get install libasound2-dev
     - name: Rust toolchain version to nightly
       run: rustup default nightly
+    - name: Build API
+      run: cargo build --bin api --verbose
     - name: Build miMusic
       run: cargo build --bin miMusic --verbose
