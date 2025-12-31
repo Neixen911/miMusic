@@ -24,5 +24,3 @@ jobs:
       run: cargo build --bin api --verbose
     - name: Build miMusic
       run: cargo build --bin miMusic --verbose
-    - name: Run miMusic
-      run: cargo run --bin miMusic
