@@ -24,3 +24,5 @@ jobs:
       run: cargo build --bin api --verbose
     - name: Build miMusic
       run: cargo build --bin miMusic --verbose
+    - name: Check miMusic settingd
+      run: script -c "cargo run --bin miMusic" /dev/null
