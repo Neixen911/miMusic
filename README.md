@@ -7,6 +7,13 @@ Here’s a preview of miMusic’s terminal interface:
 ![miMusic-TUI](https://github.com/user-attachments/assets/70bd4427-19f4-489a-81c8-d6020c93d663)
 *🚧 (miMusic is currently under active development) 🚧*
 
+## Installation
+
+To install miMusic and be capable of use it, you need to pull this repository and run the command `cargo run --bin miMusic` in the terminal.
+You will see the interface and now, you are capable to use it on your own with keyboards shortcuts in the bottom of the app.
+
+I'm pretty open to suggestions and be extremely happy to know that the app would be helping you ! Enjoy it !
+
 ## Technical Information
 
 **Optimized Performance** : Memory consumption of approximately 15MB currently. The architecture aims to guarantee minimal CPU and memory usage. Performances are currently being optimized.
