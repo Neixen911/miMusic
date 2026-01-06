@@ -18,8 +18,6 @@ const OUTPUT_FILE_FORMAT: &str = "mp3";
 const BASE_3_MIN_DOWNLOADING_TIME: f64 = 30.0;
 const MINUTE_SUPPLEMENTARY: f64 = 2.5;
 
-const SONGS_FOLDER_PATH: PathBuf = 
-
 pub struct Player {
 	pub sink: Sink,
     pub songs_queue: Vec<HashMap<String, String>>,
