@@ -17,7 +17,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Pre-installation
-      run: sudo apt-get install libasound2-dev
+      run: sudo apt-get install rustup libasound2-dev pkgconf
     - name: Rust toolchain version to nightly
       run: rustup default nightly
     - name: Build API
