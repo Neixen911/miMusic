@@ -222,7 +222,12 @@ impl Player {
 	// Return all the songs with their tags from the active playlist
 	pub fn get_all_songs_from_active_playlist(&mut self, playlist_name: &String) -> Vec<HashMap<String, String>> {
 		let mut songs = Vec::new();
-		let songs_path = fs::read_dir("songs").expect("Unable to find songs folder !");
+		let songs_path = if fs::exists("songs").expect("Non authorized folder check !") {
+			fs::read_dir("songs").expect("Can't retrieve songs folder !")
+		} else {
+			let _ = fs::create_dir("songs");
+			fs::read_dir("songs").expect("Can't retrieve songs folder !")
+		};
 
 		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
 		let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
