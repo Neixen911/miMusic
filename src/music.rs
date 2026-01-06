@@ -229,7 +229,16 @@ impl Player {
 			fs::read_dir("songs").expect("Can't retrieve songs folder !")
 		};
 
-		let _ = File::create("playlists.json").expect("Failed to create/open playlists.json");
+		if !fs::exists("playlists.json").expect("Non authorized folder check !") {
+			let mut new: Vec<Playlist> = Vec::new();
+			new.push(Playlist { playlist_name: "All songs".to_string(), songs_list: Vec::new() });
+
+			let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
+			let mut playlists_writer = BufWriter::new(playlists_file);
+			let _ = serde_json::to_writer(&mut playlists_writer, &new);
+			let _ = playlists_writer.flush();
+		}
+
 		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
 		let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
 			.expect("Playlists JSON content is not well-formatted !");
