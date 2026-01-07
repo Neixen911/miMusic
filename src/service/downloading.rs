@@ -16,7 +16,7 @@ pub struct DownloadingService {
 impl DownloadingService {
     pub fn new() -> Self {
         DownloadingService {
-            input_downloading: "ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string(),
+            input_downloading: "https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string(),
             state_download: 0.0
         }
     }
