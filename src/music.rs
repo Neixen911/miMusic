@@ -17,6 +17,7 @@ use walkdir::WalkDir;
 const OUTPUT_FILE_FORMAT: &str = "mp3";
 const BASE_3_MIN_DOWNLOADING_TIME: f64 = 30.0;
 const MINUTE_SUPPLEMENTARY: f64 = 2.5;
+const ARCH: &str = std::env::consts::ARCH;
 
 pub struct Player {
 	pub sink: Sink,
@@ -355,7 +356,7 @@ impl Player {
 // Retrieve data(s) song(s) from a unique URL
 pub async fn retrieve_songs_datas_from(url: &str) -> (Vec<String>, f64) {
     let libraries_dir = PathBuf::from("libs");
-    let yt_dlp = libraries_dir.join("yt-dlp");
+    let yt_dlp = libraries_dir.join(format!("yt-dlp-{ARCH}"));
 
     // Fetching song(s) data(S)
     let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
@@ -393,7 +394,7 @@ pub async fn retrieve_songs_datas_from(url: &str) -> (Vec<String>, f64) {
 // Download song from a unique URL
 pub async fn download_song(song_url: String) {
     let libraries_dir = PathBuf::from("libs");
-    let yt_dlp = libraries_dir.join("yt-dlp");
+    let yt_dlp = libraries_dir.join(format!("yt-dlp-{ARCH}"));
     let output_dir = PathBuf::from("songs");
 	
     let id_song = WalkDir::new(&output_dir).into_iter().count() - 1;
