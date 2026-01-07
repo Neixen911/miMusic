@@ -398,6 +398,7 @@ pub async fn download_song(song_url: String) {
     let output_dir = PathBuf::from("songs");
 	
     let id_song = WalkDir::new(&output_dir).into_iter().count() - 1;
+	let ffmpeg_location = libraries_dir.join(format!("ffmpeg-{ARCH}"));
 	let filename = output_dir.join("song".to_owned() + &id_song.to_string() + "." + OUTPUT_FILE_FORMAT);
 
 	let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
@@ -407,6 +408,7 @@ pub async fn download_song(song_url: String) {
 		"-x", 
 		"--audio-format", OUTPUT_FILE_FORMAT, 
 		"--add-metadata", 
+		"--ffmpeg-location", ffmpeg_location.to_str().expect("Unable to convert to str"),
 		"-o", filename.to_str().expect("Unable to convert to str"), 
 		&song_url, 
 	]).output().expect("Can't download song !");
