@@ -511,7 +511,7 @@ impl App {
         let hotkeys_text: &str;
         match self.mode.as_str() {
             "songs" => {
-                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Like/Unlike <L> - Add to playlist <A> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
             }
             "download" => {
                 hotkeys_text = "Download <Enter> - Switch Mode <Tab>";
