@@ -151,6 +151,7 @@ impl App {
                     KeyCode::Char(' ')              => { self.pause_play_song(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     KeyCode::Char('a')              => { self.display_popup("add_song"); },
+                    KeyCode::Delete                 => { self.display_popup("remove_song"); },
                     _ => {}
                 }
             }
@@ -172,7 +173,7 @@ impl App {
                     KeyCode::Tab                    => { self.switch_mode(); },
                     KeyCode::Char('a')              => { self.display_popup("add_playlist"); },
                     KeyCode::Char('m')              => { self.display_popup("modify_playlist"); },
-                    KeyCode::Delete                 => { self.display_popup("remove_playlist")},
+                    KeyCode::Delete                 => { self.display_popup("remove_playlist"); },
                     _ => {}
                 }
             }
@@ -206,6 +207,14 @@ impl App {
                     KeyCode::Up                     => { self.previous(); },
                     KeyCode::Down                   => { self.next(); },
                     KeyCode::Enter                  => { self.add_or_remove_song_to_playlist(); },
+                    KeyCode::Esc                    => { self.next_mode(); }
+                    _ => {}
+                }
+            }
+            "remove_popup_songs" => {
+                match key_event.code {
+                    KeyCode::Enter                  => { self.remove_or_not_song(); },
+                    KeyCode::Tab                    => { self.switch_answer(); },
                     KeyCode::Esc                    => { self.next_mode(); }
                     _ => {}
                 }
@@ -330,6 +339,9 @@ impl App {
             "add_popup_songs" => {
                 next_mode = "songs";
             }
+            "remove_popup_songs" => {
+                next_mode = "songs";
+            }
             &_ => {
                 next_mode = "";
             }
@@ -358,6 +370,9 @@ impl App {
             }
             "add_song" => {
                 self.mode = "add_popup_songs".to_string();
+            }
+            "remove_song" => {
+                self.mode = "remove_popup_songs".to_string();
             }
             &_ => {}
         }
@@ -395,6 +410,17 @@ impl App {
         if selected_playlist != "All songs".to_string() {
             self.player.add_or_remove_song_to_playlist(song_to_add, selected_playlist);
         }
+    }
+
+    fn remove_or_not_song(&mut self) {
+        if self.is_answer_positive {
+            let song_to_remove = self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")]
+                .get("path")
+                .expect("Can't retrieve path of the selected song !")
+                .to_string();
+            self.player.remove_song(song_to_remove);
+        }
+        self.next_mode();
     }
 
     fn switch_answer(&mut self) {
@@ -481,43 +507,6 @@ impl App {
         self.playlists_service.render(frame, playlists);
         self.songs_service.render(frame, songs);
 
-        // Songs section
-        // let mut songs_datas: Vec<Row> = Vec::new();
-        // for song in &self.all_songs {
-        //     let (min, sec) = Self::seconds_to_minsec(song.get("duration")
-        //         .expect("Unable to get song duration !")
-        //         .to_string()
-        //         .parse::<f64>()
-        //         .expect("Unable to convert into f64 !"));
-        //     let duration = format!("{:02}", min) + ":" + format!("{:02}", sec).as_str();
-        //     songs_datas.push(Row::new(vec![
-        //         Cell::from(Text::from(song.get("title").expect("Unable to get title from song !").to_string())),
-        //         Cell::from(Text::from(song.get("artist").expect("Unable to get artist from song !").to_string())),
-        //         Cell::from(Text::from(duration)),
-        //         Cell::from(Text::from(song.get("is_favorite").expect("Unable to get is_favorite from song !").to_string()).alignment(Alignment::Center)),
-        //     ]));
-        // }
-        // let header = Row::new(vec!["Title", "Artist", "Duration", ""]);
-        // let songs_border_style = if self.mode.as_str() == "songs" {Color::Magenta} else {Color::Reset};
-        // let songs_table = Table::new(
-        //     songs_datas,
-        //     [
-        //         Constraint::Fill(2),                // Song name
-        //         Constraint::Fill(1),                // Song's artists
-        //         Constraint::Max(10),                // Song duration
-        //         Constraint::Max(10),                // Is in favorites or not
-        //     ])
-        //     .block(
-        //         Block::default()
-        //         .title(Line::from("Songs"))
-        //         .borders(ratatui::widgets::Borders::ALL)
-        //         .border_style(songs_border_style)
-        //     )
-        //     .header(header)
-        //     .row_highlight_style(Style::default().fg(Color::Magenta))
-        //     .highlight_symbol(Text::from(vec![" █ ".into()]));
-        // frame.render_stateful_widget(songs_table, songs, &mut self.songs_state);
-
         // Hotkeys section
         let hotkeys_text: &str;
         match self.mode.as_str() {
@@ -541,6 +530,9 @@ impl App {
             }
             "add_popup_songs" => {
                 hotkeys_text = "Navigate <Up/Down> - Add <Enter> - Close <Esc>";
+            }
+            "remove_popup_songs" => {
+                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>"
             }
             &_ => {
                 hotkeys_text = "";
@@ -576,6 +568,11 @@ impl App {
                     popup_question = format!("In which playlist(s) do you want to add '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
                     answers_type = "table";
                     answer_height = Constraint::Max(3);
+                }
+                "remove_popup_songs" => {
+                    popup_question = format!("Do you really want to delete '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
+                    answers_type = "binary";
+                    answer_height = Constraint::Max(1);
                 }
                 &_ => {
                     // Delete a random song (1/1000 chance)

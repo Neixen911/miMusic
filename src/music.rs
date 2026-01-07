@@ -3,7 +3,7 @@ use regex::Regex;
 use rodio::{Decoder, Sink, source::EmptyCallback};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{self, File, read_to_string};
+use std::fs::{self, File, read_to_string, remove_file};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::process::Command;
@@ -350,6 +350,28 @@ impl Player {
 				break;
 			}
 		}
+	}
+
+	// Remove the selected song
+	pub fn remove_song(&mut self, song_to_remove: String) {
+		// Remove song from all playlists
+		let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+		let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+			.expect("Playlists JSON content is not well-formatted !");
+		for playlist in &mut playlists {
+			if playlist.songs_list.contains(&song_to_remove) {
+				let position = playlist.songs_list.iter().position(|n| *n == song_to_remove).expect("Can't get position of path into JSON file !");
+				playlist.songs_list.swap_remove(position);
+			}
+		}
+
+		let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
+		let mut playlists_writer = BufWriter::new(playlists_file);
+		let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+		let _ = playlists_writer.flush();
+
+		// Remove song itself
+		let _ = remove_file(&song_to_remove);
 	}
 }
 
