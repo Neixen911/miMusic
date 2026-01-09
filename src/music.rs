@@ -1,3 +1,5 @@
+use super::db::Database;
+
 use id3::{Content, Tag, TagLike, Version};
 use regex::Regex;
 use rodio::{Decoder, Sink, source::EmptyCallback};
@@ -12,7 +14,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
-use walkdir::WalkDir;
 
 const OUTPUT_FILE_FORMAT: &str = "mp3";
 const BASE_3_MIN_DOWNLOADING_TIME: f64 = 30.0;
@@ -370,6 +371,16 @@ impl Player {
 		let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
 		let _ = playlists_writer.flush();
 
+		// Remove id of song from the database
+		let id_song: &str = song_to_remove
+			.strip_prefix("songs/song")
+			.and_then(|s: &str| s.strip_suffix(".mp3"))
+			.unwrap();
+		let _ = Database::get_instance().lock().unwrap().execute(
+            "DELETE FROM songs WHERE slot = ?1",
+            [id_song],
+        );
+
 		// Remove song itself
 		let _ = remove_file(&song_to_remove);
 	}
@@ -419,7 +430,25 @@ pub async fn download_song(song_url: String) {
     let yt_dlp = libraries_dir.join(format!("yt-dlp-{ARCH}"));
     let output_dir = PathBuf::from("songs");
 	
-    let id_song = WalkDir::new(&output_dir).into_iter().count() - 1;
+	let id_song: String = Database::get_instance().lock().unwrap().query_row(
+	    "
+	    SELECT COALESCE(
+	        (
+	            SELECT slot + 1
+	            FROM songs
+	            WHERE slot + 1 NOT IN (SELECT slot FROM songs)
+	            ORDER BY slot
+	            LIMIT 1
+	        ),
+	        0
+	    )
+	    ",
+	    [],
+		|row| row.get::<_, i64>(0)
+	)
+	.unwrap()
+	.to_string();
+
 	let ffmpeg_location = libraries_dir.join(format!("ffmpeg-{ARCH}"));
 	let filename = output_dir.join("song".to_owned() + &id_song.to_string() + "." + OUTPUT_FILE_FORMAT);
 
@@ -434,6 +463,11 @@ pub async fn download_song(song_url: String) {
 		"-o", filename.to_str().expect("Unable to convert to str"), 
 		&song_url, 
 	]).output().expect("Can't download song !");
+	
+	let _ = Database::get_instance().lock().unwrap().execute(
+		"INSERT INTO songs (slot, title) VALUES (?1, ?2)",
+		[&id_song, "Hello world !"],
+	);
 
 	applying_metadata("songs/song".to_owned() + &id_song.to_string() + "." + OUTPUT_FILE_FORMAT);
 }

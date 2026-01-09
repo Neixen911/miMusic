@@ -1,10 +1,12 @@
 #![feature(str_split_remainder)]
 
 mod music;
+mod db;
 mod service;
 
 use music::Player;
 use service::{Service, PlayingService, DownloadingService, PlaylistsService, SongsService};
+use db::Database;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Flex, Layout},
@@ -15,7 +17,9 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use rodio::{OutputStreamBuilder, Sink};
+use rusqlite::{OptionalExtension};
 use std::io;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -72,6 +76,37 @@ impl App {
         self.playing_service.playing_infos = self.player.get_current_song_info();
         self.songs_service.set_all_songs(self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
         self.playlists_service.set_all_playlists(self.player.get_all_playlists());
+
+        let _ = Database::get_instance().lock().unwrap().execute(
+            "CREATE TABLE IF NOT EXISTS songs (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                slot    INTEGER UNIQUE NOT NULL,
+                title   TEXT NOT NULL
+            )",
+            (),
+        );
+
+        // Add all number present in song filenames in database if they weren't
+        let songs_dir = PathBuf::from("songs");
+        let songs_iter = std::fs::read_dir(&songs_dir)?;
+        for song in songs_iter {
+            let filename = song?.file_name().clone();
+            let file_slot: &str = filename.to_str().unwrap()
+                .strip_prefix("song")
+                .and_then(|s: &str| s.strip_suffix(".mp3"))
+                .unwrap();
+
+            let exists = Database::get_instance().lock().unwrap().query_row("SELECT slot FROM songs WHERE slot = ?1 LIMIT 1", [file_slot], |_| Ok(()))
+                .optional()
+                .unwrap()
+                .is_some();
+            if !exists {
+                let _ = Database::get_instance().lock().unwrap().execute(
+                    "INSERT INTO songs (slot, title) VALUES (?1, ?2)",
+                    [file_slot, "Hello world !"],
+                );
+            }
+        }
 
         let (sender, mut receiver) = mpsc::channel(1);
 
