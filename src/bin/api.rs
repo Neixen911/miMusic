@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{self, File, read_to_string};
+use std::fs::{self, File, read_to_string, read_dir};
 use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
 use std::process::Command;
@@ -15,7 +15,6 @@ use regex::Regex;
 use rodio::{Decoder, OutputStreamBuilder, Sink, source::EmptyCallback};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
-use walkdir::WalkDir;
 
 const BASE_3_MIN_DOWNLOADING_TIME: u64 = 26;
 const MINUTE_SUPPLEMENTARY: f32 = 2.5;
@@ -257,7 +256,7 @@ fn download_song(song_url: String) {
     let yt_dlp = libraries_dir.join("yt-dlp");
     let output_dir = PathBuf::from("songs");
 	
-    let id_song = WalkDir::new(&output_dir).into_iter().count() - 1;
+    let id_song = read_dir(&output_dir).into_iter().count() - 1;
 	let filename = output_dir.join("song".to_owned() + &id_song.to_string() + ".mp3");
 	let mut yt_music_song_url = song_url.replace("www.youtube.com", "music.youtube.com");
 
