@@ -80,8 +80,7 @@ impl App {
         let _ = Database::get_instance().lock().unwrap().execute(
             "CREATE TABLE IF NOT EXISTS songs (
                 id      INTEGER PRIMARY KEY AUTOINCREMENT,
-                slot    INTEGER UNIQUE NOT NULL,
-                title   TEXT NOT NULL
+                slot    INTEGER UNIQUE NOT NULL
             )",
             (),
         );
@@ -102,8 +101,8 @@ impl App {
                 .is_some();
             if !exists {
                 let _ = Database::get_instance().lock().unwrap().execute(
-                    "INSERT INTO songs (slot, title) VALUES (?1, ?2)",
-                    [file_slot, "Hello world !"],
+                    "INSERT INTO songs (slot) VALUES (?1)",
+                    [file_slot],
                 );
             }
         }

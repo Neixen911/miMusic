@@ -465,8 +465,8 @@ pub async fn download_song(song_url: String) {
 	]).output().expect("Can't download song !");
 	
 	let _ = Database::get_instance().lock().unwrap().execute(
-		"INSERT INTO songs (slot, title) VALUES (?1, ?2)",
-		[&id_song, "Hello world !"],
+		"INSERT INTO songs (slot) VALUES (?1)",
+		[&id_song],
 	);
 
 	applying_metadata("songs/song".to_owned() + &id_song.to_string() + "." + OUTPUT_FILE_FORMAT);
