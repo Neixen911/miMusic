@@ -1,5 +1,3 @@
-use super::db::Database;
-
 use id3::{Content, Tag};
 use rodio::{Decoder, Sink, source::EmptyCallback};
 use serde::{Deserialize, Serialize};
@@ -367,16 +365,6 @@ impl Player {
 		let mut playlists_writer = BufWriter::new(playlists_file);
 		let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
 		let _ = playlists_writer.flush();
-
-		// Remove id of song from the database
-		let id_song: &str = song_to_remove
-			.strip_prefix("songs/song")
-			.and_then(|s: &str| s.strip_suffix(".mp3"))
-			.unwrap();
-		let _ = Database::get_instance().lock().unwrap().execute(
-            "DELETE FROM songs WHERE slot = ?1",
-            [id_song],
-        );
 
 		// Remove song itself
 		let _ = remove_file(&song_to_remove);
