@@ -1,12 +1,10 @@
 #![feature(str_split_remainder)]
 
 mod music;
-mod db;
 mod service;
 
 use music::Player;
 use service::{Service, PlayingService, DownloadingService, PlaylistsService, SongsService};
-use db::Database;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Flex, Layout},
@@ -17,14 +15,12 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use rodio::{OutputStreamBuilder, Sink};
-use rusqlite::{OptionalExtension};
 use std::io;
-use std::path::PathBuf;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio;
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::watch::{self, Receiver, Sender};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -44,7 +40,6 @@ async fn main() -> io::Result<()> {
         songs_service: SongsService::new(),
         mode: "songs".to_string(),
         input_modify_playlists: "".to_string(),
-        total_downloading_time: 0.0,
         downloading_started: false,
         is_running: false,
         is_answer_positive: false,
@@ -64,7 +59,6 @@ pub struct App {
     songs_service: SongsService,
     mode: String,
     input_modify_playlists: String,
-    total_downloading_time: f64,
     downloading_started: bool,
     is_running: bool,
     is_answer_positive: bool,
@@ -77,41 +71,10 @@ impl App {
         self.songs_service.set_all_songs(self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
         self.playlists_service.set_all_playlists(self.player.get_all_playlists());
 
-        let _ = Database::get_instance().lock().unwrap().execute(
-            "CREATE TABLE IF NOT EXISTS songs (
-                id      INTEGER PRIMARY KEY AUTOINCREMENT,
-                slot    INTEGER UNIQUE NOT NULL
-            )",
-            (),
-        );
-
-        // Add all number present in song filenames in database if they weren't
-        let songs_dir = PathBuf::from("songs");
-        let songs_iter = std::fs::read_dir(&songs_dir)?;
-        for song in songs_iter {
-            let filename = song?.file_name().clone();
-            let file_slot: &str = filename.to_str().unwrap()
-                .strip_prefix("song")
-                .and_then(|s: &str| s.strip_suffix(".mp3"))
-                .unwrap();
-
-            let exists = Database::get_instance().lock().unwrap().query_row("SELECT slot FROM songs WHERE slot = ?1 LIMIT 1", [file_slot], |_| Ok(()))
-                .optional()
-                .unwrap()
-                .is_some();
-            if !exists {
-                let _ = Database::get_instance().lock().unwrap().execute(
-                    "INSERT INTO songs (slot) VALUES (?1)",
-                    [file_slot],
-                );
-            }
-        }
-
-        let (sender, mut receiver) = mpsc::channel(1);
+        let (sender, mut receiver) = watch::channel((0, 0, 0.0));
 
         let tick_rate = Duration::from_millis(250);
         let mut tick_time_elapsed = Instant::now();
-        let mut time_downloading = Instant::now();
 
         while self.is_running {
             // Draw TUI
@@ -125,7 +88,7 @@ impl App {
 
             // Update datas each 0.25s (not each frame bc it makes 10x CPU usage)
             if tick_time_elapsed.elapsed() >= tick_rate {
-                self.update_datas(&mut time_downloading, &mut receiver).await;
+                self.update_datas(&mut receiver).await;
                 tick_time_elapsed = Instant::now();
             }
         }
@@ -133,24 +96,25 @@ impl App {
     }
 
     // Function to update all datas
-    async fn update_datas(&mut self, time_downloading: &mut Instant, receiver: &mut Receiver<f64>) {
+    async fn update_datas(&mut self, receiver: &mut Receiver<(u32, u32, f64)>) {
         // Update data in playing section
         self.playing_service.playing_infos = self.player.get_current_song_info();
 
         // Update progress bar during downloading song(s)
-        if !receiver.is_empty() {
-            *time_downloading = Instant::now();
-            self.total_downloading_time = receiver.recv().await.expect("Can't retrieve estimated downloading duration value !");
-            self.downloading_service.input_downloading = format!("Estimated total downloading duration : {}s", self.total_downloading_time as u64);
-            self.downloading_started = true;
-        }
         if self.downloading_started == true {
-            self.downloading_service.state_download = time_downloading.elapsed().as_secs() as f64 / self.total_downloading_time;
-        }
-        if self.downloading_service.state_download >= 0.99 {
-            self.downloading_service.state_download = 0.0;
-            self.downloading_started = false;
-            self.downloading_service.input_downloading = "Download successfull !".to_string();
+            let (downloading_index, downloading_total, downlading_percent) = *receiver.borrow();
+            let mut index_of_total = String::from("");
+            if downloading_index != 0 && downloading_total != 0 {
+                index_of_total = format!("{}/{}", downloading_index, downloading_total);
+            }
+            if downlading_percent > 0.0 && downlading_percent <= 99.0 {
+                self.downloading_service.state_download = downlading_percent / 100.0;
+                self.downloading_service.input_downloading = format!("Download {}: {}%", index_of_total, downlading_percent);
+            } else if self.downloading_service.state_download > 0.0 && downlading_percent < 0.0 {
+                self.downloading_service.state_download = 0.0;
+                self.downloading_started = false;
+                self.downloading_service.input_downloading = "Download successfull !".to_string();
+            }
         }
         
         // Update all songs
@@ -161,7 +125,7 @@ impl App {
     }
 
     // Retrieve keys events
-    async fn handle_events(&mut self, sender: Sender<f64>) {
+    async fn handle_events(&mut self, sender: Sender<(u32, u32, f64)>) {
         match event::read().expect("Can't read events !") {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 self.handle_key_event(key_event, sender).await;
@@ -172,7 +136,7 @@ impl App {
 
     // Match key event to dedicated function
     // Refactor function calls to remove intermediate function calls (enter_action() using match isn't necessary if the right function is directly call)
-    async fn handle_key_event(&mut self, key_event: KeyEvent, sender: Sender<f64>) {
+    async fn handle_key_event(&mut self, key_event: KeyEvent, sender: Sender<(u32, u32, f64)>) {
         match self.mode.as_str() {
             "songs" => {
                 match key_event.code {
@@ -498,14 +462,11 @@ impl App {
         }
     }
 
-    async fn download_songs_from_url(&mut self, url: String, sender: Sender<f64>) {
+    async fn download_songs_from_url(&mut self, url: String, sender: Sender<(u32, u32, f64)>) {
         self.downloading_service.input_downloading = "Starting to fetch datas from YouTube URL ...".to_string();
+        self.downloading_started = true;
         tokio::spawn( async move {
-            let (urls, duration) = music::retrieve_songs_datas_from(&url).await;
-            sender.send(duration).await.expect("Can't send estimated downloading time value !");
-            for song_url in urls {
-                music::download_song(song_url).await;
-            }
+            music::download_song(sender, url).await;
         });
     }
 

@@ -20,8 +20,6 @@ jobs:
       run: sudo apt-get install rustup libasound2-dev pkgconf
     - name: Rust toolchain version to nightly
       run: rustup default nightly
-    - name: Build API
-      run: cargo build --bin api --verbose
     - name: Build miMusic
       run: cargo build --bin miMusic --verbose
       
