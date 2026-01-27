@@ -1,23 +1,20 @@
 use super::db::Database;
 
-use id3::{Content, Tag, TagLike, Version};
-use regex::Regex;
+use id3::{Content, Tag};
 use rodio::{Decoder, Sink, source::EmptyCallback};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File, read_to_string, remove_file};
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::Command;
-use std::str::Chars;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
+use tokio::sync::watch::Sender;
 
 const OUTPUT_FILE_FORMAT: &str = "mp3";
-const BASE_3_MIN_DOWNLOADING_TIME: f64 = 30.0;
-const MINUTE_SUPPLEMENTARY: f64 = 2.5;
 const ARCH: &str = std::env::consts::ARCH;
 
 pub struct Player {
@@ -386,145 +383,61 @@ impl Player {
 	}
 }
 
-// Retrieve data(s) song(s) from a unique URL
-pub async fn retrieve_songs_datas_from(url: &str) -> (Vec<String>, f64) {
-    let libraries_dir = PathBuf::from("libs");
-    let yt_dlp = libraries_dir.join(format!("yt-dlp-{ARCH}"));
-
-    // Fetching song(s) data(S)
-    let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
-    let status = binding.args([
-        "--skip-download", 
-        "--no-playlist", 
-        "--print", "%(webpage_url)s %(duration)s", 
-        url, 
-    ]).output().expect("Failed to fetching song(s) data(s) !");
-
-    let json_data = String::from_utf8_lossy(&status.stdout);
-    let urls: Vec<String> = json_data
-		.lines()
-		.filter_map(|line| line.split_whitespace().nth(0))
-		.map(|word| word.to_string())
-		.collect();
-	let durations: Vec<String> = json_data
-		.lines()
-		.filter_map(|line| line.split_whitespace().nth(1))
-		.map(|word| word.to_string())
-		.collect();
-	let mut estimated_downloading_durations: f64 = 0.0;
-	for duration in durations {
-		let min_song: f64 = duration.parse::<f64>().expect("Can't convert String to f64 !") / 60.0;
-		let mut estimated_downloading_duration: f64 = BASE_3_MIN_DOWNLOADING_TIME;
-		if min_song > 3.0 {
-			estimated_downloading_duration = estimated_downloading_duration + ((min_song - 3.0) * MINUTE_SUPPLEMENTARY).ceil();
-		}
-		estimated_downloading_durations = estimated_downloading_durations + estimated_downloading_duration;
-	}
-
-	(urls, estimated_downloading_durations)
-}
-
 // Download song from a unique URL
-pub async fn download_song(song_url: String) {
+pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
     let libraries_dir = PathBuf::from("libs");
     let yt_dlp = libraries_dir.join(format!("yt-dlp-{ARCH}"));
     let output_dir = PathBuf::from("songs");
-	
-	let id_song: String = Database::get_instance().lock().unwrap().query_row(
-	    "
-	    SELECT COALESCE(
-	        (
-	            SELECT slot + 1
-	            FROM songs
-	            WHERE slot + 1 NOT IN (SELECT slot FROM songs)
-	            ORDER BY slot
-	            LIMIT 1
-	        ),
-	        0
-	    )
-	    ",
-	    [],
-		|row| row.get::<_, i64>(0)
-	)
-	.unwrap()
-	.to_string();
 
 	let ffmpeg_location = libraries_dir.join(format!("ffmpeg-{ARCH}"));
-	let filename = output_dir.join("song".to_owned() + &id_song.to_string() + "." + OUTPUT_FILE_FORMAT);
+	let filename = output_dir.join("%(id)s");
 
 	let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
-	let _status = binding.args([
-		"--quiet", 
+	let mut status = binding.args([
+		"--progress",
+		"--newline",
 		"--no-write-subs", 
+		"--no-playlist", 
 		"-x", 
 		"--audio-format", OUTPUT_FILE_FORMAT, 
 		"--add-metadata", 
-		"--ffmpeg-location", ffmpeg_location.to_str().expect("Unable to convert to str"),
+		"--ffmpeg-location", ffmpeg_location.to_str().expect("Unable to convert to str"), 
 		"-o", filename.to_str().expect("Unable to convert to str"), 
 		&song_url, 
-	]).output().expect("Can't download song !");
-	
-	let _ = Database::get_instance().lock().unwrap().execute(
-		"INSERT INTO songs (slot) VALUES (?1)",
-		[&id_song],
-	);
+	])
+	.stdout(Stdio::piped())
+	.stderr(Stdio::piped())
+	.spawn()
+	.expect("Can't download song !");
 
-	applying_metadata("songs/song".to_owned() + &id_song.to_string() + "." + OUTPUT_FILE_FORMAT);
-}
+	let stdout = status.stdout.take().expect("Can't retrieve stdout of yt-dlp downlading process !");
+    let mut lines = BufReader::new(stdout).lines();
 
-// Applying new metadata to the file
-fn applying_metadata(filename: String) {
-	let file = File::open(&filename).expect("Unable to open file !");
-	let mut tag = Tag::read_from2(&file).expect("Unable to get tags from file !");
+	let mut index: u32 = 0;
+	let mut total: u32 = 0;
+	let mut percent: f64 = 0.0;
 
-	// Parsing tags
-	let mut new_title = tag.title().expect("Can't get title !").to_string();
-	let new_artist = tag.artist().expect("Can't get artist !").to_string();
-
-	if new_title.contains(&new_artist) {
-		new_title = new_title.replace(&new_artist, "");
-	}
-
-	// List of commons regex to remove
-	let list_regex = [ r"\(.*\)", r"\[.*\]", r".*『", r"』.*", r".*「", r"」.*", r".*-", r" feat.*", r"ft.*", r"by.*" ];
-	for regex in list_regex {
-		let regex_to_remove = Regex::new(regex).expect("Can't create Regex !");
-		new_title = regex_to_remove.replace_all(&new_title, "").to_string();
-	}
-
-	let mut position: u8 = 0;
-	let tmp = new_title.clone();
-	let new_title_iter = tmp.chars();
-
-	for character in new_title_iter {
-		if !character.is_alphabetic() && have_whitespace_after(&mut new_title.chars(), position) {
-			new_title = new_title.replace(character, " ");
+	while let Some(line) = lines.next() {
+		let line = line.expect("Can't retrieve a None value !");
+		if line.contains("[download] Downloading item") {
+			// A optimiser (surement)
+			index = line.split_whitespace()
+				.nth(3).expect("Can't get outside of the array !")
+				.parse::<u32>().expect("Can't convert &str to u32 !");
+			total = line.split_whitespace()
+				.nth(5).expect("Can't get outside of the array !")
+				.parse::<u32>().expect("Can't convert &str to u32 !");
 		}
-		position = position + 1;
-	}
-
-	let spaces_regex = Regex::new(r" {2,}").expect("Can't create Regex !");
-	new_title = spaces_regex.replace_all(&new_title, " ").to_string();
-
-	// Setting tags
-	tag.set_title(new_title.trim());
-	tag.set_artist(new_artist.trim());
-
-	tag.write_to_path(&filename, Version::Id3v24).expect("Can't write metadata to the file");
-}
-
-// Check if special character have whitespace it
-fn have_whitespace_after(title: &mut Chars<'_>, position: u8) -> bool {
-	let length: usize = title.clone().count() - 1;
-	let next_character_position: usize = (position + 1).into();
-	
-	if next_character_position <= length {
-		if title.nth(next_character_position).expect("Can't get next character !").is_whitespace() {
-			return true;
-		} else {
-			return false;
+		if line.contains("%") {
+			percent = line.split_whitespace()
+				.find(|w| w.ends_with('%'))
+				.and_then(|p| Some(p.trim_end_matches('%')))
+				.and_then(|m: &str| Some(m.parse::<f64>().expect("Can't convert &str to f64 !")))
+				.expect("Can't truncate correctly percent value !");
 		}
-	} else {
-		return false;
-	}
+
+		let _ = sender.send((index, total, percent));
+    }
+    let _ = status.wait().expect("Can't download song !");
+	let _ = sender.send((0, 0, -1.0));
 }
