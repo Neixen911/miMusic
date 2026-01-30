@@ -1,5 +1,7 @@
 use super::Service;
 
+use id3::{Tag, TagLike, Version};
+use std::fs::File;
 use ratatui::{
     layout::{Constraint, Rect},
     prelude::{Alignment},
@@ -68,12 +70,55 @@ impl SongsService {
     pub fn get_songs_state(&self) -> Option<usize> {
         self.songs_state.selected()
     }
+
+	pub fn get_modify_song_infos(&mut self) -> Vec<(String, String)> {
+		let mut song_infos = Vec::new();
+        let song = &self.get_all_songs()[self.get_songs_state().expect("Can't retrieve active song id !")];
+
+        let song_entitled = ["Title", "Artist"];
+
+		for entitled_name in song_entitled {
+            song_infos.push((entitled_name.to_string(), song.get(&entitled_name.to_lowercase()).expect("Can't retrieve a specific value of a song !").to_string()));
+		}
+
+		song_infos
+	}
+
+	pub fn modifying_metadata(&mut self, new_song_datas: &Vec<(String, String)>) {
+        let filepath = &self.get_all_songs()[self.get_songs_state().expect("Can't retrieve active song id !")].get("path").expect("Can't retrieve path of song file !");
+		let file = File::open(&filepath).expect("Unable to open file !");
+		let mut tag = Tag::read_from2(&file).expect("Unable to get tags from file !");
+
+        let mut new_title = String::from("");
+        let mut new_artist = String::from("");
+
+        for (name, content) in new_song_datas {
+            match name.as_str() {
+                "Title" => {
+                    new_title = content.to_string();
+                }
+                "Artist" => {
+                    new_artist = content.to_string();
+                }
+                &_ => {
+                    println!("{}, {}", name, content);
+                    continue;
+                }
+            }
+        }
+
+		// Setting tags
+		tag.set_title(new_title);
+		tag.set_artist(new_artist);
+
+		tag.write_to_path(&filepath, Version::Id3v24).expect("Can't write metadata to the file");
+	}
 }
 
 impl Service for SongsService {
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         let mut songs_datas: Vec<Row> = Vec::new();
-        for song in &self.all_songs {
+        for song in self.get_all_songs() {
             let (min, sec) = Self::seconds_to_minsec(song.get("duration")
                 .expect("Unable to get song duration !")
                 .to_string()
