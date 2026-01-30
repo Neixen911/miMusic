@@ -7,11 +7,11 @@ use music::Player;
 use service::{Service, PlayingService, DownloadingService, PlaylistsService, SongsService};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
-    layout::{Constraint, Flex, Layout},
+    layout::{Alignment as TableAlignment, Constraint, Flex, Layout},
     prelude::{Alignment},
     style::{Color, Style},
-    text::{Line},
-    widgets::{Block, Clear, Paragraph, Row, Table, TableState, Wrap},
+    text::{Line, Text},
+    widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
     DefaultTerminal, Frame,
 };
 use rodio::{OutputStreamBuilder, Sink};
@@ -29,6 +29,8 @@ async fn main() -> io::Result<()> {
     stream_handle.log_on_drop(false);
     let mut app = App {
         song_to_playlists_state: TableState::default().with_selected(0),
+        song_infos_state: TableState::default().with_selected(0),
+        input_song_datas: Vec::new(),
         player: Player::new(
             Sink::connect_new(stream_handle.mixer()), 
             Vec::new(), 
@@ -52,6 +54,8 @@ async fn main() -> io::Result<()> {
 pub struct App {
     // Reorganise & reduce this variables (is_running at the end, some variables can maybe get out ...)
     song_to_playlists_state: TableState,
+    song_infos_state: TableState,
+    input_song_datas: Vec<(String, String)>,
     player: Player,
     playing_service: PlayingService,
     downloading_service: DownloadingService,
@@ -145,6 +149,7 @@ impl App {
                     KeyCode::Up                     => { self.songs_service.previous(); },
                     KeyCode::Down                   => { self.songs_service.next(); },
                     KeyCode::Right                  => { self.skip_song(); },
+                    KeyCode::Char('m')              => { self.display_popup("modify_song") },
                     KeyCode::Char('l')              => { self.set_favorites(); },
                     KeyCode::Char(' ')              => { self.pause_play_song(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
@@ -196,6 +201,15 @@ impl App {
                 match key_event.code {
                     KeyCode::Enter                  => { self.remove_or_not_playlist(); },
                     KeyCode::Tab                    => { self.switch_answer(); },
+                    KeyCode::Esc                    => { self.next_mode(); }
+                    _ => {}
+                }
+            }
+            "modify_popup_songs" => {
+                match key_event.code {
+                    KeyCode::Enter                  => { self.modify_song(); },
+                    KeyCode::Backspace              => { self.remove_char_from_input(); },
+                    KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
                     KeyCode::Esc                    => { self.next_mode(); }
                     _ => {}
                 }
@@ -281,6 +295,19 @@ impl App {
                 };
                 self.song_to_playlists_state.select(Some(i));
             }
+            "modify_popup_songs" => {
+                let i = match self.song_infos_state.selected() {
+                    Some(i) => {
+                        if i >= self.songs_service.get_modify_song_infos().len() - 1 {
+                            0
+                        } else {
+                            i + 1
+                        }
+                    }
+                    None => 0,
+                };
+                self.song_infos_state.select(Some(i));
+            }
             &_ => {}
         }
     }
@@ -334,6 +361,9 @@ impl App {
             "remove_popup_playlists" => {
                 next_mode = "playlists";
             }
+            "modify_popup_songs" => {
+                next_mode = "songs"
+            }
             "add_popup_songs" => {
                 next_mode = "songs";
             }
@@ -357,14 +387,25 @@ impl App {
             }
             "modify_playlist" => {
                 if *selected_playlist != "All songs".to_string() && *selected_playlist != "Favorites".to_string() {
-                    self.mode = "modify_popup_playlists".to_string();
                     self.input_modify_playlists = selected_playlist.to_string();
+                    self.mode = "modify_popup_playlists".to_string();
                 }
             }
             "remove_playlist" => {
                 if *selected_playlist != "All songs".to_string() && *selected_playlist != "Favorites".to_string() {
                     self.mode = "remove_popup_playlists".to_string();
                 }
+            }
+            "modify_song" => {
+                let modify_song_infos = self.songs_service.get_modify_song_infos();
+                self.input_song_datas = Vec::new();
+                for (entitled_name, entitled_content) in modify_song_infos {
+                    let entitled_name_formatted = entitled_name;
+                    let entitled_content_formatted = entitled_content;
+                    self.input_song_datas.push((entitled_name_formatted, entitled_content_formatted));
+                }
+                self.song_infos_state.select(Some(0));
+                self.mode = "modify_popup_songs".to_string();
             }
             "add_song" => {
                 self.mode = "add_popup_songs".to_string();
@@ -387,6 +428,15 @@ impl App {
         let i = self.playlists_service.get_playlists_state();
         self.player.modify_playlist(i, &self.input_modify_playlists);
         self.next_mode();
+    }
+
+    fn modify_song(&mut self) {
+        if self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !") < self.songs_service.get_modify_song_infos().len() - 1 {
+            self.next();
+        } else {
+            self.songs_service.modifying_metadata(&self.input_song_datas);
+            self.next_mode();
+        }
     }
 
     fn remove_or_not_playlist(&mut self) {
@@ -444,6 +494,9 @@ impl App {
             "modify_popup_playlists" => {
                 self.input_modify_playlists.pop();
             }
+            "modify_popup_songs" => {
+                self.input_song_datas[self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !")].1.pop();
+            }
             &_ => {}
         }
     }
@@ -457,6 +510,9 @@ impl App {
                 if self.input_modify_playlists.len() < 20 {
                     self.input_modify_playlists.push_str(&new_char.to_string());
                 }
+            }
+            "modify_popup_songs" => {
+                self.input_song_datas[self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !")].1.push_str(&new_char.to_string());
             }
             &_ => {}
         }
@@ -506,7 +562,7 @@ impl App {
         let hotkeys_text: &str;
         match self.mode.as_str() {
             "songs" => {
-                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
             }
             "download" => {
                 hotkeys_text = "Download <Enter> - Switch Mode <Tab>";
@@ -522,6 +578,9 @@ impl App {
             }
             "remove_popup_playlists" => {
                 hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
+            }
+            "modify_popup_songs" => {
+                hotkeys_text = "Modify <Enter> - Close <Esc>"
             }
             "add_popup_songs" => {
                 hotkeys_text = "Navigate <Up/Down> - Add <Enter> - Close <Esc>";
@@ -558,6 +617,11 @@ impl App {
                     popup_question = format!("Do you really want to delete '{}' playlist ?", self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name);
                     answers_type = "binary";
                     answer_height = Constraint::Max(1);
+                }
+                "modify_popup_songs" => {
+                    popup_question = format!("What is the new informations of this song ?");
+                    answers_type = "inputs_table";
+                    answer_height = Constraint::Max(2);
                 }
                 "add_popup_songs" => {
                     popup_question = format!("In which playlist(s) do you want to add '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
@@ -630,7 +694,7 @@ impl App {
                 "table" => {
                     let mut playlists_datas: Vec<Row> = Vec::new();
                     for playlist in self.playlists_service.get_all_playlists() {
-                        let is_in_playlist = playlist.songs_list.contains(self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("path").expect("Can't have an empty title name song !"));
+                        let is_in_playlist = playlist.songs_list.contains(self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("path").expect("Can't retrieve path of song file !"));
                         let checkbox: &str;
                         if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
                             checkbox = "[X]";
@@ -648,6 +712,23 @@ impl App {
                         ])
                         .row_highlight_style(Style::default().bg(Color::Magenta).fg(Color::White));
                     frame.render_stateful_widget(selection_table, chunks[1], &mut self.song_to_playlists_state);
+                }
+                "inputs_table" => {
+                    let mut song_datas: Vec<Row> = Vec::new();
+                    for (name, content) in &self.input_song_datas {
+                        song_datas.push(Row::new(vec![
+                            Cell::from(format!("{}:", name)), 
+                            Cell::from(Text::from(content.to_string()).alignment(TableAlignment::Right))
+                        ]))
+                    }
+                    let modify_table = Table::new(
+                        song_datas,
+                        [
+                            Constraint::Length(8),              // Entitled name
+                            Constraint::Fill(1),                // Entitled's content
+                        ])
+                        .row_highlight_style(Style::default().bg(Color::Magenta).fg(Color::White));
+                    frame.render_stateful_widget(modify_table, chunks[1], &mut self.song_infos_state);
                 }
                 &_ => {}
             }
