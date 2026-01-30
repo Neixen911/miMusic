@@ -7,11 +7,11 @@ use music::Player;
 use service::{Service, PlayingService, DownloadingService, PlaylistsService, SongsService};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
-    layout::{Constraint, Flex, Layout},
+    layout::{Alignment as TableAlignment, Constraint, Flex, Layout},
     prelude::{Alignment},
     style::{Color, Style},
-    text::{Line},
-    widgets::{Block, Clear, Paragraph, Row, Table, TableState, Wrap},
+    text::{Line, Text},
+    widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
     DefaultTerminal, Frame,
 };
 use rodio::{OutputStreamBuilder, Sink};
@@ -717,8 +717,8 @@ impl App {
                     let mut song_datas: Vec<Row> = Vec::new();
                     for (name, content) in &self.input_song_datas {
                         song_datas.push(Row::new(vec![
-                            format!("{}:", name), 
-                            content.to_string()
+                            Cell::from(format!("{}:", name)), 
+                            Cell::from(Text::from(content.to_string()).alignment(TableAlignment::Right))
                         ]))
                     }
                     let modify_table = Table::new(
