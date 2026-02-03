@@ -174,6 +174,7 @@ impl App {
                     KeyCode::Up                     => { self.playlists_service.previous(); },
                     KeyCode::Down                   => { self.playlists_service.next(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
+                    KeyCode::BackTab                => { self.add_all_songs_to_queue(); },
                     KeyCode::Char('a')              => { self.display_popup("add_playlist"); },
                     KeyCode::Char('m')              => { self.display_popup("modify_playlist"); },
                     KeyCode::Delete                 => { self.display_popup("remove_playlist"); },
@@ -243,19 +244,26 @@ impl App {
                 self.playlists_service.set_active_playlist(playlist_name.to_string());
             }
             "songs" => {
-                self.add_song_to_queue();
+                let i = self.songs_service.get_songs_state();
+                if i.is_some() {
+                    let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")].get("path").expect("Can't retrieve path of file song !").to_owned();
+                    self.add_song_to_queue(&path);
+                }
             }
             &_ => {}
         }
     }
 
     // Add song to the queue on key pressed
-    fn add_song_to_queue(&mut self) {
-        let i = self.songs_service.get_songs_state();
-        if i.is_some() {
-            let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")].get("path");
-            let path = path.as_deref().expect("Unable to make the variable as ownership !");
-            self.player.add_song_to_queue(&path);
+    fn add_song_to_queue(&mut self, path: &str) {
+        self.player.add_song_to_queue(path);
+    }
+
+    // Add all songs of a playlist to the queue on key pressed
+    fn add_all_songs_to_queue(&mut self) {
+        for song_id in 0..self.songs_service.get_all_songs().len() {
+            let path = self.songs_service.get_all_songs()[song_id].get("path").expect("Can't retrieve path of the song file !").to_owned();
+            self.add_song_to_queue(&path);
         }
     }
 
