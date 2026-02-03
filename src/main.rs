@@ -4,7 +4,7 @@ mod music;
 mod service;
 
 use music::Player;
-use service::{Service, PlayingService, DownloadingService, PlaylistsService, SongsService};
+use service::{Service, ServiceName, PlayingService, DownloadingService, PlaylistsService, SongsService};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Alignment as TableAlignment, Constraint, Flex, Layout},
@@ -30,17 +30,19 @@ async fn main() -> io::Result<()> {
     let mut app = App {
         song_to_playlists_state: TableState::default().with_selected(0),
         song_infos_state: TableState::default().with_selected(0),
-        input_song_datas: Vec::new(),
         player: Player::new(
             Sink::connect_new(stream_handle.mixer()), 
             Vec::new(), 
             Arc::new(AtomicU32::new(0))
         ),
-        playing_service: PlayingService::new(),
-        downloading_service: DownloadingService::new(),
-        playlists_service: PlaylistsService::new(),
-        songs_service: SongsService::new(),
+        active_service: ServiceName::NONE,
+        playing_service: PlayingService::new(ServiceName::PLAYING),
+        downloading_service: DownloadingService::new(ServiceName::DOWNLOADING),
+        playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS),
+        songs_service: SongsService::new(ServiceName::SONGS),
         mode: "songs".to_string(),
+        input_position: 0,
+        input_song_datas: Vec::new(),
         input_modify_playlists: "".to_string(),
         downloading_started: false,
         is_running: false,
@@ -55,14 +57,16 @@ pub struct App {
     // Reorganise & reduce this variables (is_running at the end, some variables can maybe get out ...)
     song_to_playlists_state: TableState,
     song_infos_state: TableState,
-    input_song_datas: Vec<(String, String)>,
     player: Player,
+    active_service: ServiceName,
     playing_service: PlayingService,
     downloading_service: DownloadingService,
     playlists_service: PlaylistsService,
     songs_service: SongsService,
     mode: String,
+    input_song_datas: Vec<(String, String)>,
     input_modify_playlists: String,
+    input_position: usize,
     downloading_started: bool,
     is_running: bool,
     is_answer_positive: bool,
@@ -71,6 +75,7 @@ pub struct App {
 impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
+        self.active_service = ServiceName::SONGS;
         self.playing_service.playing_infos = self.player.get_current_song_info();
         self.songs_service.set_all_songs(self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
         self.playlists_service.set_all_playlists(self.player.get_all_playlists());
@@ -160,6 +165,8 @@ impl App {
             }
             "download" => {
                 match key_event.code {
+                    KeyCode::Left                   => { self.left_input_position(); },
+                    KeyCode::Right                  => { self.right_input_position(); },
                     KeyCode::Enter                  => { self.download_songs_from_url(self.downloading_service.input_downloading.to_string(), sender).await; },
                     KeyCode::Backspace              => { self.remove_char_from_input(); },
                     KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
@@ -246,7 +253,8 @@ impl App {
             "songs" => {
                 let i = self.songs_service.get_songs_state();
                 if i.is_some() {
-                    let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")].get("path").expect("Can't retrieve path of file song !").to_owned();
+                    let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")]
+                        .get("path").expect("Can't retrieve path of file song !").to_owned();
                     self.add_song_to_queue(&path);
                 }
             }
@@ -320,6 +328,16 @@ impl App {
         }
     }
 
+    // Move cursor to the left of the selected input
+    fn left_input_position(&mut self) {
+
+    }
+
+    // Move cursor to the right of the selected input
+    fn right_input_position(&mut self) {
+        
+    }
+
     // Skip playing song on key pressed
     fn skip_song(&mut self) {
         if !self.player.empty() {
@@ -353,33 +371,43 @@ impl App {
         match self.mode.as_str() {
             "songs" => {
                 next_mode = "download";
+                self.active_service = ServiceName::DOWNLOADING;
             }
             "download" => {
                 next_mode = "playlists";
+                self.active_service = ServiceName::PLAYLISTS;
             }
             "playlists" => {
                 next_mode = "songs";
+                self.active_service = ServiceName::SONGS;
             }
             "add_popup_playlists" => {
                 next_mode = "playlists";
+                self.active_service = ServiceName::PLAYLISTS;
             }
             "modify_popup_playlists" => {
                 next_mode = "playlists";
+                self.active_service = ServiceName::PLAYLISTS;
             }
             "remove_popup_playlists" => {
                 next_mode = "playlists";
+                self.active_service = ServiceName::PLAYLISTS;
             }
             "modify_popup_songs" => {
-                next_mode = "songs"
+                next_mode = "songs";
+                self.active_service = ServiceName::SONGS;
             }
             "add_popup_songs" => {
                 next_mode = "songs";
+                self.active_service = ServiceName::SONGS;
             }
             "remove_popup_songs" => {
                 next_mode = "songs";
+                self.active_service = ServiceName::SONGS;
             }
             &_ => {
                 next_mode = "";
+                self.active_service = ServiceName::NONE;
             }
         }
 
@@ -551,10 +579,10 @@ impl App {
         frame.render_widget(app_text, app);
         
         // Playing section
-        self.playing_service.render(frame, playing);
+        self.playing_service.render(frame, playing, &self.active_service);
 
         // Downloading section
-        self.downloading_service.render(frame, download);
+        self.downloading_service.render(frame, download, &self.active_service);
 
         // Playlists & Songs section
         let horizontal = Layout::horizontal([
@@ -563,8 +591,8 @@ impl App {
         ]);
         let [playlists, songs] = horizontal.areas(playlists_songs);
 
-        self.playlists_service.render(frame, playlists);
-        self.songs_service.render(frame, songs);
+        self.playlists_service.render(frame, playlists, &self.active_service);
+        self.songs_service.render(frame, songs, &self.active_service);
 
         // Hotkeys section
         let hotkeys_text: &str;
@@ -573,10 +601,10 @@ impl App {
                 hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
             }
             "download" => {
-                hotkeys_text = "Download <Enter> - Switch Mode <Tab>";
+                hotkeys_text = "Navigate <Left/Right> - Download <Enter> - Switch Mode <Tab>";
             }
             "playlists" => {
-                hotkeys_text = "Navigate <Up/Down> - Select <Enter> - New <A> - Modify <M> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Navigate <Up/Down> - Select <Enter> - All songs to queue <Backtab> - New <A> - Modify <M> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
             }
             "add_popup_playlists" => {
                 hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";

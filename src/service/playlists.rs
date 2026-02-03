@@ -1,4 +1,4 @@
-use super::Service;
+use super::{Service, ServiceName};
 use super::super::music::Playlist;
 
 use ratatui::{
@@ -10,20 +10,13 @@ use ratatui::{
 };
 
 pub struct PlaylistsService {
+    service_name: ServiceName,
     active_playlist: String,
     all_playlists: Vec<Playlist>,
     playlists_state: TableState
 }
 
 impl PlaylistsService {
-    pub fn new() -> Self {
-        PlaylistsService {
-            active_playlist: "All songs".to_string(),
-            all_playlists: Vec::new(),
-            playlists_state: TableState::default().with_selected(0),
-        }
-    }
-
     pub fn set_active_playlist(&mut self, new_playlist: String) {
         self.active_playlist = new_playlist;
     }
@@ -72,15 +65,27 @@ impl PlaylistsService {
 }
 
 impl Service for PlaylistsService {
-    fn render(&mut self, frame: &mut Frame, area: Rect) {
+    fn new(service_name: ServiceName) -> Self {
+        PlaylistsService {
+            service_name: service_name,
+            active_playlist: "All songs".to_string(),
+            all_playlists: Vec::new(),
+            playlists_state: TableState::default().with_selected(0),
+        }
+    }
+
+    fn get_name(&self) -> &ServiceName {
+        &self.service_name
+    }
+
+    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let mut playlists_datas: Vec<Row> = Vec::new();
         for playlist in &self.all_playlists {
             playlists_datas.push(Row::new(vec![
                 playlist.playlist_name.as_str(),
             ]));
         }
-        //let playlists_border_style = if self.mode.as_str() == "playlists" {Color::Magenta} else {Color::Reset};
-        let playlists_border_style = Color::Reset;
+        let playlists_border_style = if active_service == self.get_name() {Color::Magenta} else {Color::Reset};
         let playlists_table = Table::new(
             playlists_datas,
             [
