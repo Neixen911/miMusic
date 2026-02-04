@@ -2,6 +2,7 @@
 
 mod music;
 mod service;
+mod tool;
 
 use music::Player;
 use service::{Service, ServiceName, PlayingService, DownloadingService, PlaylistsService, SongsService};
@@ -115,11 +116,11 @@ impl App {
             }
             if downlading_percent > 0.0 && downlading_percent <= 99.0 {
                 self.downloading_service.state_download = downlading_percent / 100.0;
-                self.downloading_service.input_downloading = format!("Download {}: {}%", index_of_total, downlading_percent);
+                self.downloading_service.set_input_downloading(format!("Download {}: {}%", index_of_total, downlading_percent));
             } else if self.downloading_service.state_download > 0.0 && downlading_percent < 0.0 {
                 self.downloading_service.state_download = 0.0;
                 self.downloading_started = false;
-                self.downloading_service.input_downloading = "Download successfull !".to_string();
+                self.downloading_service.set_input_downloading("Download successfull !".to_string());
             }
         }
         
@@ -162,12 +163,15 @@ impl App {
             }
             "download" => {
                 match key_event.code {
-                    KeyCode::Left                   => { self.downloading_service.left_input_position(); },
-                    KeyCode::Right                  => { self.downloading_service.right_input_position(); },
-                    KeyCode::Enter                  => { self.download_songs_from_url(self.downloading_service.input_downloading.to_string(), sender).await; },
-                    KeyCode::Backspace              => { self.downloading_service.remove_previous_char_from_input(); },
-                    KeyCode::Delete                 => { self.downloading_service.remove_next_char_from_input(); },
-                    KeyCode::Char(to_insert)        => { self.downloading_service.add_char_to_input(to_insert); },
+                    KeyCode::Left                   => { self.downloading_service.input_downloading.left_input_position(); },
+                    KeyCode::Right                  => { self.downloading_service.input_downloading.right_input_position(); },
+                    KeyCode::Enter                  => {
+                        let input_downloading = self.downloading_service.input_downloading.get_input();
+                        self.download_songs_from_url(input_downloading, sender).await;
+                    },
+                    KeyCode::Backspace              => { self.downloading_service.input_downloading.remove_previous_char_from_input(); },
+                    KeyCode::Delete                 => { self.downloading_service.input_downloading.remove_next_char_from_input(); },
+                    KeyCode::Char(to_insert)        => { self.downloading_service.input_downloading.add_char_to_input(to_insert); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
@@ -537,7 +541,7 @@ impl App {
     }
 
     async fn download_songs_from_url(&mut self, url: String, sender: Sender<(u32, u32, f64)>) {
-        self.downloading_service.input_downloading = "Starting to fetch datas from YouTube URL ...".to_string();
+        self.downloading_service.set_input_downloading("Starting to fetch datas from YouTube URL ...".to_string());
         self.downloading_started = true;
         tokio::spawn( async move {
             music::download_song(sender, url).await;
