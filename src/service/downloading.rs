@@ -11,7 +11,39 @@ use ratatui::{
 pub struct DownloadingService {
     pub service_name: ServiceName,
     pub input_downloading: String,
-    pub state_download: f64
+    pub state_download: f64,
+    pub input_position: u16
+}
+
+impl DownloadingService {
+    pub fn add_char_to_input(&mut self, new_char: char) {
+        self.input_downloading.insert(self.input_downloading.len() - self.input_position as usize, new_char);
+    }
+
+    pub fn remove_previous_char_from_input(&mut self) {
+        if self.input_downloading.len() - self.input_position as usize >= 1 {
+            self.input_downloading.remove(self.input_downloading.len() - self.input_position as usize - 1);
+        }
+    }
+
+    pub fn remove_next_char_from_input(&mut self) {
+        if self.input_position as usize != 0 {
+            self.input_downloading.remove(self.input_downloading.len() - self.input_position as usize);
+            self.input_position = self.input_position - 1;
+        }
+    }
+
+    pub fn left_input_position(&mut self) {
+        if self.input_position < self.input_downloading.len() as u16 {
+            self.input_position = self.input_position + 1;
+        }
+    }
+
+    pub fn right_input_position(&mut self) {
+        if self.input_position > 0 {
+            self.input_position = self.input_position - 1;
+        }
+    }
 }
 
 impl Service for DownloadingService {
@@ -19,7 +51,8 @@ impl Service for DownloadingService {
         DownloadingService {
             service_name: service_name,
             input_downloading: "https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string(),
-            state_download: 0.0
+            state_download: 0.0,
+            input_position: 0
         }
     }
 
@@ -50,13 +83,17 @@ impl Service for DownloadingService {
             .gauge_style(Color::Magenta)
             .label(downloading_label);
         frame.render_widget(downloading_gauge_section, chunks[0]);
-        frame.set_cursor_position(Position::new(
-            // Right position - Left position to get the most inputable value
-            // Adding the length of the input
-            // Divide the all by 2 because the input set to the center
-            // Adding 4 because of the 2 border + the last character + after it
-            ((chunks[0].right() - chunks[0].left()) + self.input_downloading.len() as u16) / 2 + 4,
-            chunks[0].top()
-        ));
+
+        // Render cursor only if service is the active one
+        if active_service == self.get_name() {
+            frame.set_cursor_position(Position::new(
+                // Right position - Left position to get the most inputable value
+                // Adding the length of the input
+                // Divide the all by 2 because the input set to the center
+                // Adding 4 because of the 2 border + the last character + after it
+                ((chunks[0].right() - chunks[0].left()) + self.input_downloading.len() as u16) / 2 + 4 - self.input_position,
+                chunks[0].top()
+            ));
+        }
     }
 }

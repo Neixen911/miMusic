@@ -35,13 +35,12 @@ async fn main() -> io::Result<()> {
             Vec::new(), 
             Arc::new(AtomicU32::new(0))
         ),
-        active_service: ServiceName::NONE,
+        active_service: ServiceName::SONGS,
         playing_service: PlayingService::new(ServiceName::PLAYING),
         downloading_service: DownloadingService::new(ServiceName::DOWNLOADING),
         playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS),
         songs_service: SongsService::new(ServiceName::SONGS),
         mode: "songs".to_string(),
-        input_position: 0,
         input_song_datas: Vec::new(),
         input_modify_playlists: "".to_string(),
         downloading_started: false,
@@ -66,7 +65,6 @@ pub struct App {
     mode: String,
     input_song_datas: Vec<(String, String)>,
     input_modify_playlists: String,
-    input_position: usize,
     downloading_started: bool,
     is_running: bool,
     is_answer_positive: bool,
@@ -75,7 +73,6 @@ pub struct App {
 impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
-        self.active_service = ServiceName::SONGS;
         self.playing_service.playing_infos = self.player.get_current_song_info();
         self.songs_service.set_all_songs(self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
         self.playlists_service.set_all_playlists(self.player.get_all_playlists());
@@ -165,11 +162,12 @@ impl App {
             }
             "download" => {
                 match key_event.code {
-                    KeyCode::Left                   => { self.left_input_position(); },
-                    KeyCode::Right                  => { self.right_input_position(); },
+                    KeyCode::Left                   => { self.downloading_service.left_input_position(); },
+                    KeyCode::Right                  => { self.downloading_service.right_input_position(); },
                     KeyCode::Enter                  => { self.download_songs_from_url(self.downloading_service.input_downloading.to_string(), sender).await; },
-                    KeyCode::Backspace              => { self.remove_char_from_input(); },
-                    KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
+                    KeyCode::Backspace              => { self.downloading_service.remove_previous_char_from_input(); },
+                    KeyCode::Delete                 => { self.downloading_service.remove_next_char_from_input(); },
+                    KeyCode::Char(to_insert)        => { self.downloading_service.add_char_to_input(to_insert); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
@@ -326,16 +324,6 @@ impl App {
             }
             &_ => {}
         }
-    }
-
-    // Move cursor to the left of the selected input
-    fn left_input_position(&mut self) {
-
-    }
-
-    // Move cursor to the right of the selected input
-    fn right_input_position(&mut self) {
-        
     }
 
     // Skip playing song on key pressed
@@ -524,9 +512,6 @@ impl App {
 
     fn remove_char_from_input(&mut self) {
         match self.mode.as_str() {
-            "download" => {
-                self.downloading_service.input_downloading.pop();
-            }
             "modify_popup_playlists" => {
                 self.input_modify_playlists.pop();
             }
@@ -539,9 +524,6 @@ impl App {
 
     fn insert_char_into_input(&mut self, new_char: char) {
         match self.mode.as_str() {
-            "download" => {
-                self.downloading_service.input_downloading.push_str(&new_char.to_string());
-            }
             "modify_popup_playlists" => {
                 if self.input_modify_playlists.len() < 20 {
                     self.input_modify_playlists.push_str(&new_char.to_string());
