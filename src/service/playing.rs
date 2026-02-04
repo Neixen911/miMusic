@@ -1,4 +1,4 @@
-use super::Service;
+use super::{Service, ServiceName};
 
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -9,16 +9,11 @@ use ratatui::{
 };
 
 pub struct PlayingService {
+    pub service_name: ServiceName,
     pub playing_infos: Vec<String>
 }
 
 impl PlayingService {
-    pub fn new() -> Self {
-        PlayingService {
-            playing_infos: Vec::new()
-        }
-    }
-
     // Convert seconds to minutes/seconds
     pub fn seconds_to_minsec(seconds: f64) -> (u32, u32) {
         let min = (seconds / 60.0).floor() as u32;
@@ -29,7 +24,18 @@ impl PlayingService {
 }
 
 impl Service for PlayingService {
-    fn render(&mut self, frame: &mut Frame, area: Rect) {
+    fn new(service_name: ServiceName) -> Self {
+        PlayingService {
+            service_name: service_name,
+            playing_infos: Vec::new()
+        }
+    }
+
+    fn get_name(&self) -> &ServiceName {
+        &self.service_name
+    }
+
+    fn render(&mut self, frame: &mut Frame, area: Rect, _active_service: &ServiceName) {
         let chunks = Layout::vertical([
             Constraint::Length(4),              // Playing informations
             Constraint::Length(1),              // Duration gauge

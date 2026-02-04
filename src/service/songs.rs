@@ -1,4 +1,4 @@
-use super::Service;
+use super::{Service, ServiceName};
 
 use id3::{Tag, TagLike, Version};
 use std::fs::File;
@@ -13,18 +13,12 @@ use ratatui::{
 use std::collections::HashMap;
 
 pub struct SongsService {
+    service_name: ServiceName,
     all_songs: Vec<HashMap<String, String>>,
     songs_state: TableState
 }
 
 impl SongsService {
-    pub fn new() -> Self {
-        SongsService {
-            all_songs: Vec::new(),
-            songs_state: TableState::default().with_selected(0),
-        }
-    }
-
     // Select previous song in songs table
     pub fn previous(&mut self) {
         let mut selected_song_id = self.get_songs_state().expect("Can't retrieve active song id !");
@@ -116,7 +110,19 @@ impl SongsService {
 }
 
 impl Service for SongsService {
-    fn render(&mut self, frame: &mut Frame, area: Rect) {
+    fn new(service_name: ServiceName) -> Self {
+        SongsService {
+            service_name: service_name,
+            all_songs: Vec::new(),
+            songs_state: TableState::default().with_selected(0),
+        }
+    }
+
+    fn get_name(&self) -> &ServiceName {
+        &self.service_name
+    }
+
+    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let mut songs_datas: Vec<Row> = Vec::new();
         for song in self.get_all_songs() {
             let (min, sec) = Self::seconds_to_minsec(song.get("duration")
@@ -133,8 +139,7 @@ impl Service for SongsService {
             ]));
         }
         let header = Row::new(vec!["Title", "Artist", "Duration", ""]);
-        // let songs_border_style = if self.mode.as_str() == "songs" {Color::Magenta} else {Color::Reset};
-        let songs_border_style = Color::Reset;
+        let songs_border_style = if active_service == self.get_name() {Color::Magenta} else {Color::Reset};
         let songs_table = Table::new(
             songs_datas,
             [

@@ -3,8 +3,23 @@ use ratatui::{
     Frame
 };
 
+#[derive(PartialEq)]
+pub enum ServiceName {
+    NONE,
+    PLAYING,
+    DOWNLOADING,
+    SONGS,
+    PLAYLISTS
+}
+
 pub trait Service {
-    fn render(&mut self, frame: &mut Frame, area: Rect);
+    fn new(service_name: ServiceName) -> Self
+    where
+        Self: Sized;
+    fn get_name(&self) -> &ServiceName;
+    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName)
+    where
+        Self: Sized;
 }
 
 pub mod playing;
