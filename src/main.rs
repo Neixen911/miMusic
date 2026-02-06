@@ -4,7 +4,7 @@ mod music;
 mod service;
 mod tool;
 
-use music::Player;
+use music::{Loop, Player};
 use service::{Service, ServiceName, PlayingService, DownloadingService, PlaylistsService, SongsService};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
@@ -32,9 +32,7 @@ async fn main() -> io::Result<()> {
         song_to_playlists_state: TableState::default().with_selected(0),
         song_infos_state: TableState::default().with_selected(0),
         player: Player::new(
-            Sink::connect_new(stream_handle.mixer()), 
-            Vec::new(), 
-            Arc::new(AtomicU32::new(0))
+            Sink::connect_new(stream_handle.mixer())
         ),
         active_service: ServiceName::SONGS,
         playing_service: PlayingService::new(ServiceName::PLAYING),
@@ -45,6 +43,7 @@ async fn main() -> io::Result<()> {
         input_song_datas: Vec::new(),
         input_modify_playlists: "".to_string(),
         downloading_started: false,
+        loop_value: Loop::None,
         is_running: false,
         is_answer_positive: false,
     };
@@ -67,6 +66,7 @@ pub struct App {
     input_song_datas: Vec<(String, String)>,
     input_modify_playlists: String,
     downloading_started: bool,
+    loop_value: Loop,
     is_running: bool,
     is_answer_positive: bool,
 }
@@ -104,7 +104,8 @@ impl App {
 
     // Function to update all datas
     async fn update_datas(&mut self, receiver: &mut Receiver<(u32, u32, f64)>) {
-        // Update data in playing section
+        // Update data and retrieve song data in playing section
+        self.player.update_datas();
         self.playing_service.playing_infos = self.player.get_current_song_info();
 
         // Update progress bar during downloading song(s)
@@ -151,13 +152,21 @@ impl App {
                     KeyCode::Enter                  => { self.enter_action(); },
                     KeyCode::Up                     => { self.songs_service.previous(); },
                     KeyCode::Down                   => { self.songs_service.next(); },
-                    KeyCode::Right                  => { self.skip_song(); },
                     KeyCode::Char('m')              => { self.display_popup("modify_song") },
                     KeyCode::Char('l')              => { self.set_favorites(); },
-                    KeyCode::Char(' ')              => { self.pause_play_song(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     KeyCode::Char('a')              => { self.display_popup("add_song"); },
                     KeyCode::Delete                 => { self.display_popup("remove_song"); },
+                    _ => {}
+                }
+            }
+            "playing" => {
+                match key_event.code {
+                    KeyCode::Char('q')              => { self.exit(); },
+                    KeyCode::Char(' ')              => { self.pause_play_song(); },
+                    KeyCode::Char('t')              => { self.next_songs_loop(); },
+                    KeyCode::Right                  => { self.skip_song(); },
+                    KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
             }
@@ -344,6 +353,21 @@ impl App {
         } else { self.player.play(); }
     }
 
+    fn next_songs_loop(&mut self) {
+        match self.loop_value {
+            Loop::None => {
+                self.loop_value = Loop::Song;
+            },
+            Loop::Song => {
+                self.loop_value = Loop::Queue;
+            },
+            Loop::Queue => {
+                self.loop_value = Loop::None;
+            }
+        }
+        self.player.set_loop(self.loop_value);
+    }
+
     fn switch_mode(&mut self) {
         self.next_mode();
         match self.mode.as_str() {
@@ -362,6 +386,10 @@ impl App {
         let next_mode: &str;
         match self.mode.as_str() {
             "songs" => {
+                next_mode = "playing";
+                self.active_service = ServiceName::PLAYING;
+            }
+            "playing" => {
                 next_mode = "download";
                 self.active_service = ServiceName::DOWNLOADING;
             }
@@ -584,7 +612,10 @@ impl App {
         let hotkeys_text: &str;
         match self.mode.as_str() {
             "songs" => {
-                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
+            }
+            "playing" => {
+                hotkeys_text = "Play/Pause <Space> - Loop<T> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
             }
             "download" => {
                 hotkeys_text = "Navigate <Left/Right> - Download <Enter> - Switch Mode <Tab>";

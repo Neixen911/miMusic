@@ -15,10 +15,18 @@ use tokio::sync::watch::Sender;
 const OUTPUT_FILE_FORMAT: &str = "mp3";
 const ARCH: &str = std::env::consts::ARCH;
 
+#[derive(Copy, Clone)]
+pub enum Loop {
+	None,
+	Song,
+	Queue
+}
+
 pub struct Player {
 	pub sink: Sink,
     pub songs_queue: Vec<HashMap<String, String>>,
 	pub end_of_song_signal: Arc<AtomicU32>,
+	pub songs_loop: Vec<HashMap<String, String>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -29,11 +37,12 @@ pub struct Playlist {
 
 impl Player {
 	// Instantiate a Player
-	pub fn new(sink: Sink, songs_queue: Vec<HashMap<String, String>>, end_of_song_signal: Arc<AtomicU32>) -> Self {
+	pub fn new(sink: Sink) -> Self {
 		Self {
-			sink,
-			songs_queue,
-			end_of_song_signal,
+			sink: sink,
+            songs_queue: Vec::new(), 
+            end_of_song_signal: Arc::new(AtomicU32::new(0)),
+			songs_loop: Vec::new(),
 		}
 	}
 
@@ -50,6 +59,33 @@ impl Player {
 	// Return if Sink is paused or not
 	pub fn is_paused(&mut self) -> bool {
 		self.sink.is_paused()
+	}
+
+	// No loop / Loop actual song / Loop the queue
+	pub fn set_loop(&mut self, loop_value: Loop) {
+		match loop_value {
+			Loop::None => {
+				self.songs_loop = Vec::new();
+			}
+			Loop::Song => {
+				self.songs_loop.push(self.songs_queue[0].clone());
+			},
+			Loop::Queue => {
+				self.songs_loop = self.songs_queue.clone();
+			}
+		}
+	}
+
+	// Return loop value
+	pub fn get_loop(&mut self) -> String {
+		let mut loop_value: String;
+		match self.songs_loop.len() {
+			0		=> { loop_value = String::from("No loop"); },
+			1		=> { loop_value = String::from("Song loop"); },
+			2..		=> { loop_value = String::from("Queue loop"); }
+		}
+
+		loop_value
 	}
 
 	// Return if Sink is empty or not
@@ -81,19 +117,36 @@ impl Player {
 		self.add_signal_end_song();
 	}
 
-	// Return infos from the current playing song
-	pub fn get_current_song_info(&mut self) -> Vec<String> {
+	// Update datas about song
+	pub fn update_datas(&mut self) {
+		// Remove song from the queue and change signal
 		if self.end_of_song_signal.load(Ordering::Relaxed) > 0 {
+			// Loop song
+			if self.songs_loop.len() == 1 {
+				self.add_song_to_queue(&self.songs_loop[0].get("path").expect("Can't retrieve path of the song file !").to_owned());
+			}
 			self.songs_queue.remove(0);
 			self.end_of_song_signal.store(0, Ordering::Relaxed);
 		}
 
+		// Loop queue
+		if self.empty() {
+			for song_id in 0..self.songs_loop.len() {
+				let path = self.songs_loop[song_id].get("path").expect("Can't retrieve path of the song file !").to_owned();
+				self.add_song_to_queue(&path);
+			}
+		}
+	}
+
+	// Return infos from the current playing song
+	pub fn get_current_song_info(&mut self) -> Vec<String> {
 		let mut song_infos = Vec::new();
 		if self.empty() {
 			song_infos.push("No song is currently playing.".to_string());
 			song_infos.push("--".to_string());
 			song_infos.push("0".to_string());
 			song_infos.push("0".to_string());
+			song_infos.push("No loop".to_string());
 		} else {
 			if !self.songs_queue.is_empty() {
 				let actual_song = self.songs_queue.get(0).expect("Unable to get the actual song !");
@@ -101,6 +154,7 @@ impl Player {
 				song_infos.push(actual_song.get("artist").expect("Unable to get artist !").to_string());
 				song_infos.push(self.sink.get_pos().as_secs().to_string());
 				song_infos.push(actual_song.get("duration").expect("Unable to get duration !").to_string());
+				song_infos.push(self.get_loop());
 			}
 		}
 
