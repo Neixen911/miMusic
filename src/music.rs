@@ -56,6 +56,18 @@ impl Player {
 		self.sink.pause();
 	}
 
+	// Set volume of sink
+	pub fn set_volume(&mut self, new_volume: f32) {
+		if new_volume <= 3.0 {
+			self.sink.set_volume(new_volume);
+		}
+	}
+
+	// Return volume of sink
+	pub fn get_volume(&mut self) -> f32 {
+		self.sink.volume()
+	}
+
 	// Return if Sink is paused or not
 	pub fn is_paused(&mut self) -> bool {
 		self.sink.is_paused()
@@ -146,7 +158,6 @@ impl Player {
 			song_infos.push("--".to_string());
 			song_infos.push("0".to_string());
 			song_infos.push("0".to_string());
-			song_infos.push("No loop".to_string());
 		} else {
 			if !self.songs_queue.is_empty() {
 				let actual_song = self.songs_queue.get(0).expect("Unable to get the actual song !");
@@ -154,9 +165,10 @@ impl Player {
 				song_infos.push(actual_song.get("artist").expect("Unable to get artist !").to_string());
 				song_infos.push(self.sink.get_pos().as_secs().to_string());
 				song_infos.push(actual_song.get("duration").expect("Unable to get duration !").to_string());
-				song_infos.push(self.get_loop());
 			}
 		}
+		song_infos.push(format!("Volume: {}%", (self.get_volume() * 100.0).round()));
+		song_infos.push(self.get_loop());
 
 		song_infos
 	}
