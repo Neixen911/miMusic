@@ -2,8 +2,9 @@
 
 mod music;
 mod service;
+mod tool;
 
-use music::Player;
+use music::{Loop, Player};
 use service::{Service, ServiceName, PlayingService, DownloadingService, PlaylistsService, SongsService};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
@@ -31,9 +32,7 @@ async fn main() -> io::Result<()> {
         song_to_playlists_state: TableState::default().with_selected(0),
         song_infos_state: TableState::default().with_selected(0),
         player: Player::new(
-            Sink::connect_new(stream_handle.mixer()), 
-            Vec::new(), 
-            Arc::new(AtomicU32::new(0))
+            Sink::connect_new(stream_handle.mixer())
         ),
         active_service: ServiceName::SONGS,
         playing_service: PlayingService::new(ServiceName::PLAYING),
@@ -44,6 +43,7 @@ async fn main() -> io::Result<()> {
         input_song_datas: Vec::new(),
         input_modify_playlists: "".to_string(),
         downloading_started: false,
+        loop_value: Loop::None,
         is_running: false,
         is_answer_positive: false,
     };
@@ -66,6 +66,7 @@ pub struct App {
     input_song_datas: Vec<(String, String)>,
     input_modify_playlists: String,
     downloading_started: bool,
+    loop_value: Loop,
     is_running: bool,
     is_answer_positive: bool,
 }
@@ -103,7 +104,8 @@ impl App {
 
     // Function to update all datas
     async fn update_datas(&mut self, receiver: &mut Receiver<(u32, u32, f64)>) {
-        // Update data in playing section
+        // Update data and retrieve song data in playing section
+        self.player.update_datas();
         self.playing_service.playing_infos = self.player.get_current_song_info();
 
         // Update progress bar during downloading song(s)
@@ -115,11 +117,11 @@ impl App {
             }
             if downlading_percent > 0.0 && downlading_percent <= 99.0 {
                 self.downloading_service.state_download = downlading_percent / 100.0;
-                self.downloading_service.input_downloading = format!("Download {}: {}%", index_of_total, downlading_percent);
+                self.downloading_service.set_input_downloading(format!("Download {}: {}%", index_of_total, downlading_percent));
             } else if self.downloading_service.state_download > 0.0 && downlading_percent < 0.0 {
                 self.downloading_service.state_download = 0.0;
                 self.downloading_started = false;
-                self.downloading_service.input_downloading = "Download successfull !".to_string();
+                self.downloading_service.set_input_downloading("Download successfull !".to_string());
             }
         }
         
@@ -150,24 +152,35 @@ impl App {
                     KeyCode::Enter                  => { self.enter_action(); },
                     KeyCode::Up                     => { self.songs_service.previous(); },
                     KeyCode::Down                   => { self.songs_service.next(); },
-                    KeyCode::Right                  => { self.skip_song(); },
                     KeyCode::Char('m')              => { self.display_popup("modify_song") },
                     KeyCode::Char('l')              => { self.set_favorites(); },
-                    KeyCode::Char(' ')              => { self.pause_play_song(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     KeyCode::Char('a')              => { self.display_popup("add_song"); },
                     KeyCode::Delete                 => { self.display_popup("remove_song"); },
                     _ => {}
                 }
             }
+            "playing" => {
+                match key_event.code {
+                    KeyCode::Char('q')              => { self.exit(); },
+                    KeyCode::Char(' ')              => { self.pause_play_song(); },
+                    KeyCode::Char('t')              => { self.next_songs_loop(); },
+                    KeyCode::Right                  => { self.skip_song(); },
+                    KeyCode::Tab                    => { self.switch_mode(); },
+                    _ => {}
+                }
+            }
             "download" => {
                 match key_event.code {
-                    KeyCode::Left                   => { self.downloading_service.left_input_position(); },
-                    KeyCode::Right                  => { self.downloading_service.right_input_position(); },
-                    KeyCode::Enter                  => { self.download_songs_from_url(self.downloading_service.input_downloading.to_string(), sender).await; },
-                    KeyCode::Backspace              => { self.downloading_service.remove_previous_char_from_input(); },
-                    KeyCode::Delete                 => { self.downloading_service.remove_next_char_from_input(); },
-                    KeyCode::Char(to_insert)        => { self.downloading_service.add_char_to_input(to_insert); },
+                    KeyCode::Left                   => { self.downloading_service.input_downloading.left_input_position(); },
+                    KeyCode::Right                  => { self.downloading_service.input_downloading.right_input_position(); },
+                    KeyCode::Enter                  => {
+                        let input_downloading = self.downloading_service.input_downloading.get_input();
+                        self.download_songs_from_url(input_downloading, sender).await;
+                    },
+                    KeyCode::Backspace              => { self.downloading_service.input_downloading.remove_previous_char_from_input(); },
+                    KeyCode::Delete                 => { self.downloading_service.input_downloading.remove_next_char_from_input(); },
+                    KeyCode::Char(to_insert)        => { self.downloading_service.input_downloading.add_char_to_input(to_insert); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
@@ -340,6 +353,21 @@ impl App {
         } else { self.player.play(); }
     }
 
+    fn next_songs_loop(&mut self) {
+        match self.loop_value {
+            Loop::None => {
+                self.loop_value = Loop::Song;
+            },
+            Loop::Song => {
+                self.loop_value = Loop::Queue;
+            },
+            Loop::Queue => {
+                self.loop_value = Loop::None;
+            }
+        }
+        self.player.set_loop(self.loop_value);
+    }
+
     fn switch_mode(&mut self) {
         self.next_mode();
         match self.mode.as_str() {
@@ -358,6 +386,10 @@ impl App {
         let next_mode: &str;
         match self.mode.as_str() {
             "songs" => {
+                next_mode = "playing";
+                self.active_service = ServiceName::PLAYING;
+            }
+            "playing" => {
                 next_mode = "download";
                 self.active_service = ServiceName::DOWNLOADING;
             }
@@ -537,7 +569,7 @@ impl App {
     }
 
     async fn download_songs_from_url(&mut self, url: String, sender: Sender<(u32, u32, f64)>) {
-        self.downloading_service.input_downloading = "Starting to fetch datas from YouTube URL ...".to_string();
+        self.downloading_service.set_input_downloading("Starting to fetch datas from YouTube URL ...".to_string());
         self.downloading_started = true;
         tokio::spawn( async move {
             music::download_song(sender, url).await;
@@ -580,7 +612,10 @@ impl App {
         let hotkeys_text: &str;
         match self.mode.as_str() {
             "songs" => {
-                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Play/Pause <Space> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
+            }
+            "playing" => {
+                hotkeys_text = "Play/Pause <Space> - Loop<T> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
             }
             "download" => {
                 hotkeys_text = "Navigate <Left/Right> - Download <Enter> - Switch Mode <Tab>";
