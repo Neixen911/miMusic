@@ -164,6 +164,8 @@ impl App {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
                     KeyCode::Char(' ')              => { self.pause_play_song(); },
+                    KeyCode::Up                     => { self.volume_up(); },
+                    KeyCode::Down                   => { self.volume_down(); },
                     KeyCode::Char('t')              => { self.next_songs_loop(); },
                     KeyCode::Right                  => { self.skip_song(); },
                     KeyCode::Tab                    => { self.switch_mode(); },
@@ -351,6 +353,16 @@ impl App {
         if !self.player.is_paused() {
             self.player.pause();
         } else { self.player.play(); }
+    }
+
+    fn volume_up(&mut self) {
+        let volume = self.player.get_volume();
+        self.player.set_volume(volume + 0.01);
+    }
+
+    fn volume_down(&mut self) {
+        let volume = self.player.get_volume();
+        self.player.set_volume(volume - 0.01);
     }
 
     fn next_songs_loop(&mut self) {
@@ -615,7 +627,7 @@ impl App {
                 hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
             }
             "playing" => {
-                hotkeys_text = "Play/Pause <Space> - Loop<T> - Skip <Right> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Play/Pause <Space> - Loop <T> - Skip <Right> - Volume <Up/Down> - Switch Mode <Tab> - Quit <Q>";
             }
             "download" => {
                 hotkeys_text = "Navigate <Left/Right> - Download <Enter> - Switch Mode <Tab>";

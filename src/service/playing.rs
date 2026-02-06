@@ -53,11 +53,11 @@ impl Service for PlayingService {
         let rows_content: Vec<(String, String)> = vec![
             (
                 self.playing_infos.get(0).expect("Unable to get title from current playing song !").to_string(),
-                String::from("")
+                self.playing_infos.get(4).expect("Unable to get volume value from player !").to_string()
             ),
             (
                 self.playing_infos.get(1).expect("Unable to get artist from current playing song !").to_string(),
-                self.playing_infos.get(4).expect("Unable to get loop value from player !").to_string()
+                self.playing_infos.get(5).expect("Unable to get loop value from player !").to_string()
             )
         ];
 
@@ -72,7 +72,7 @@ impl Service for PlayingService {
                 .constraints([
                     Constraint::Length(50),     // Song information
                     Constraint::Min(0),         // Flexible space
-                    Constraint::Length(10),     // Player information
+                    Constraint::Length(15),     // Player information
                 ])
                 .split(playing_chunks[i]);
 
