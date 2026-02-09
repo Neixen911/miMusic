@@ -6,10 +6,36 @@ use ratatui::{
 #[derive(PartialEq)]
 pub enum ServiceName {
     NONE,
-    PLAYING,
-    DOWNLOADING,
-    SONGS,
-    PLAYLISTS
+    PLAYING(PlayingInterface),
+    DOWNLOADING(DownloadingInterface),
+    SONGS(SongsInterface),
+    PLAYLISTS(PlaylistsInterface)
+}
+
+#[derive(PartialEq)]
+pub enum PlayingInterface {
+    DEFAULT
+}
+
+#[derive(PartialEq)]
+pub enum DownloadingInterface {
+    DEFAULT
+}
+
+#[derive(PartialEq)]
+pub enum SongsInterface {
+    DEFAULT,
+    ADD,
+    MODIFY,
+    DELETE
+}
+
+#[derive(PartialEq)]
+pub enum PlaylistsInterface {
+    DEFAULT,
+    ADD,
+    MODIFY,
+    DELETE
 }
 
 pub trait Service {

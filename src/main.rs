@@ -7,7 +7,13 @@ mod tool;
 
 use crate::tool::InputTool;
 use music::{Loop, Player};
-use service::{Service, ServiceName, PlayingService, DownloadingService, PlaylistsService, SongsService};
+use service::{
+    Service, ServiceName,
+    PlayingService, PlayingInterface,
+    DownloadingService, DownloadingInterface,
+    SongsService, SongsInterface,
+    PlaylistsService, PlaylistsInterface
+};
 use dotenv::dotenv;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
@@ -35,11 +41,11 @@ async fn main() -> io::Result<()> {
         player: Player::new(
             Sink::connect_new(stream_handle.mixer())
         ),
-        active_service: ServiceName::SONGS,
-        playing_service: PlayingService::new(ServiceName::PLAYING),
-        downloading_service: DownloadingService::new(ServiceName::DOWNLOADING),
-        playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS),
-        songs_service: SongsService::new(ServiceName::SONGS),
+        active_service: ServiceName::SONGS(SongsInterface::DEFAULT),
+        playing_service: PlayingService::new(ServiceName::PLAYING(PlayingInterface::DEFAULT)),
+        downloading_service: DownloadingService::new(ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT)),
+        playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT)),
+        songs_service: SongsService::new(ServiceName::SONGS(SongsInterface::DEFAULT)),
         mode: "songs".to_string(),
         input_song_datas: Vec::new(),
         input_modify_playlists: InputTool::new("".to_string()),
@@ -453,47 +459,47 @@ impl App {
         match self.mode.as_str() {
             "songs" => {
                 next_mode = "playing";
-                self.active_service = ServiceName::PLAYING;
+                self.active_service = ServiceName::PLAYING(PlayingInterface::DEFAULT);
             }
             "playing" => {
                 next_mode = "download";
-                self.active_service = ServiceName::DOWNLOADING;
+                self.active_service = ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT);
             }
             "download" => {
                 next_mode = "playlists";
-                self.active_service = ServiceName::PLAYLISTS;
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
             }
             "playlists" => {
                 next_mode = "songs";
-                self.active_service = ServiceName::SONGS;
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             "add_popup_playlists" => {
                 next_mode = "playlists";
-                self.active_service = ServiceName::PLAYLISTS;
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
             }
             "modify_popup_playlists" => {
                 next_mode = "playlists";
-                self.active_service = ServiceName::PLAYLISTS;
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
             }
             "remove_popup_playlists" => {
                 next_mode = "playlists";
-                self.active_service = ServiceName::PLAYLISTS;
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
             }
             "modify_popup_songs" => {
                 next_mode = "songs";
-                self.active_service = ServiceName::SONGS;
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             "add_popup_songs" => {
                 next_mode = "songs";
-                self.active_service = ServiceName::SONGS;
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             "remove_popup_songs" => {
                 next_mode = "songs";
-                self.active_service = ServiceName::SONGS;
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             "normalize_popup_songs" => {
                 next_mode = "songs";
-                self.active_service = ServiceName::SONGS;
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             &_ => {
                 next_mode = "";
