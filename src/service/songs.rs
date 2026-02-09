@@ -1,4 +1,4 @@
-use super::Service;
+use super::{Service, ServiceName, SongsInterface};
 
 use ratatui::{
     layout::{Constraint, Rect},
@@ -108,5 +108,19 @@ impl Service for SongsService {
             .row_highlight_style(Style::default().fg(Color::Magenta))
             .highlight_symbol(Text::from(vec![" █ ".into()]));
         frame.render_stateful_widget(songs_table, area, &mut self.songs_state);
+
+        // Popups gestion
+        match active_service {
+            ServiceName::SONGS(SongsInterface::ADD) => {
+                
+            },
+            ServiceName::SONGS(SongsInterface::MODIFY) => {
+
+            },
+            ServiceName::SONGS(SongsInterface::DELETE) => {
+
+            },
+            _ => {}
+        }
     }
 }

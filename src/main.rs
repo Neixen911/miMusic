@@ -3,8 +3,14 @@
 mod music;
 mod service;
 
-use music::Player;
-use service::{Service, PlayingService, DownloadingService, PlaylistsService, SongsService};
+use music::{Loop, Player};
+use service::{
+    Service, ServiceName,
+    PlayingService, PlayingInterface,
+    DownloadingService, DownloadingInterface,
+    SongsService, SongsInterface,
+    PlaylistsService, PlaylistsInterface
+};
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Flex, Layout},
@@ -30,14 +36,13 @@ async fn main() -> io::Result<()> {
     let mut app = App {
         song_to_playlists_state: TableState::default().with_selected(0),
         player: Player::new(
-            Sink::connect_new(stream_handle.mixer()), 
-            Vec::new(), 
-            Arc::new(AtomicU32::new(0))
+            Sink::connect_new(stream_handle.mixer())
         ),
-        playing_service: PlayingService::new(),
-        downloading_service: DownloadingService::new(),
-        playlists_service: PlaylistsService::new(),
-        songs_service: SongsService::new(),
+        active_service: ServiceName::SONGS(SongsInterface::DEFAULT),
+        playing_service: PlayingService::new(ServiceName::PLAYING(PlayingInterface::DEFAULT)),
+        downloading_service: DownloadingService::new(ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT)),
+        playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT)),
+        songs_service: SongsService::new(ServiceName::SONGS(SongsInterface::DEFAULT)),
         mode: "songs".to_string(),
         input_modify_playlists: "".to_string(),
         total_downloading_time: 0.0,
@@ -310,25 +315,44 @@ impl App {
         let next_mode: &str;
         match self.mode.as_str() {
             "songs" => {
+                next_mode = "playing";
+                self.active_service = ServiceName::PLAYING(PlayingInterface::DEFAULT);
+            }
+            "playing" => {
                 next_mode = "download";
+                self.active_service = ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT);
             }
             "download" => {
                 next_mode = "playlists";
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
             }
             "playlists" => {
                 next_mode = "songs";
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             "add_popup_playlists" => {
                 next_mode = "playlists";
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
             }
             "modify_popup_playlists" => {
                 next_mode = "playlists";
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
             }
             "remove_popup_playlists" => {
                 next_mode = "playlists";
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
+            }
+            "modify_popup_songs" => {
+                next_mode = "songs";
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             "add_popup_songs" => {
                 next_mode = "songs";
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
+            }
+            "remove_popup_songs" => {
+                next_mode = "songs";
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             &_ => {
                 next_mode = "";
