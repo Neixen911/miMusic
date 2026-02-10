@@ -10,7 +10,8 @@ use ratatui::{
 
 pub struct PlayingService {
     pub service_name: ServiceName,
-    pub playing_infos: Vec<String>
+    pub playing_infos: Vec<String>,
+    pub previously_playing_infos: Vec<String>
 }
 
 impl PlayingService {
@@ -27,7 +28,8 @@ impl Service for PlayingService {
     fn new(service_name: ServiceName) -> Self {
         PlayingService {
             service_name: service_name,
-            playing_infos: Vec::new()
+            playing_infos: Vec::new(),
+            previously_playing_infos: Vec::new(),
         }
     }
 

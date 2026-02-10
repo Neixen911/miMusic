@@ -167,7 +167,8 @@ impl App {
                     KeyCode::Up                     => { self.volume_up(); },
                     KeyCode::Down                   => { self.volume_down(); },
                     KeyCode::Char('t')              => { self.next_songs_loop(); },
-                    KeyCode::Right                  => { self.skip_song(); },
+                    KeyCode::Left                   => { self.skip_song(2); },
+                    KeyCode::Right                  => { self.skip_song(1); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
@@ -342,9 +343,9 @@ impl App {
     }
 
     // Skip playing song on key pressed
-    fn skip_song(&mut self) {
+    fn skip_song(&mut self, skip_direction: u32) {
         if !self.player.empty() {
-            self.player.skip_one();
+            self.player.skip_one(skip_direction);
         }
     }
 
@@ -627,7 +628,7 @@ impl App {
                 hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
             }
             "playing" => {
-                hotkeys_text = "Play/Pause <Space> - Loop <T> - Skip <Right> - Volume <Up/Down> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Play/Pause <Space> - Loop <T> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Switch Mode <Tab> - Quit <Q>";
             }
             "download" => {
                 hotkeys_text = "Navigate <Left/Right> - Download <Enter> - Switch Mode <Tab>";

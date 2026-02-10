@@ -25,6 +25,7 @@ pub enum Loop {
 pub struct Player {
 	pub sink: Sink,
     pub songs_queue: Vec<HashMap<String, String>>,
+	pub previous_songs_queue: Vec<HashMap<String, String>>,
 	pub end_of_song_signal: Arc<AtomicU32>,
 	pub songs_loop: Vec<HashMap<String, String>>,
 }
@@ -40,7 +41,8 @@ impl Player {
 	pub fn new(sink: Sink) -> Self {
 		Self {
 			sink: sink,
-            songs_queue: Vec::new(), 
+            songs_queue: Vec::new(),
+			previous_songs_queue: Vec::new(),
             end_of_song_signal: Arc::new(AtomicU32::new(0)),
 			songs_loop: Vec::new(),
 		}
@@ -105,28 +107,26 @@ impl Player {
 		self.sink.empty()
 	}
 
-	// Skip the current song
-	pub fn skip_one(&mut self) {
+	// Go to the previous / next song
+	pub fn skip_one(&mut self, skip_direction: u32) {
 		self.sink.skip_one();
-		self.end_of_song_signal.store(1, Ordering::Relaxed);
+		self.end_of_song_signal.store(skip_direction, Ordering::Relaxed);
 	}
 
 	// Add signal to know when a song is ended
 	pub fn add_signal_end_song(&mut self) {
 		let end_of_song_signal_cloned = self.end_of_song_signal.clone();
 		self.sink.append(EmptyCallback::new(Box::new(move || {
-			end_of_song_signal_cloned.store(1, Ordering::Relaxed);
+			if end_of_song_signal_cloned.load(Ordering::Relaxed) == 0 {
+				end_of_song_signal_cloned.store(1, Ordering::Relaxed);
+			}
 		})));
 	}
 
 	// Add a song to the queue
 	pub fn add_song_to_queue(&mut self, path: &str) {
-		let file = File::open(path).expect("Unable to open file !");
-		let source = Decoder::new_mp3(file).expect("Unable to make a MP3 Decoder !");
-		self.sink.append(source);
 		let song = self.get_song_infos_from_file(path);
 		self.songs_queue.push(song);
-		self.add_signal_end_song();
 	}
 
 	// Update datas about song
@@ -137,12 +137,30 @@ impl Player {
 			if self.songs_loop.len() == 1 {
 				self.add_song_to_queue(&self.songs_loop[0].get("path").expect("Can't retrieve path of the song file !").to_owned());
 			}
-			self.songs_queue.remove(0);
+			// Listening way (previous or next)
+			match self.end_of_song_signal.load(Ordering::Relaxed) {
+				1 => {
+					self.previous_songs_queue.push(self.songs_queue.remove(0));
+				},
+				2 => {
+					if self.previous_songs_queue.len() >= 1 {
+						self.songs_queue.insert(0, self.previous_songs_queue.remove(self.previous_songs_queue.len() - 1));
+					}
+				},
+				_ => {}
+			}
 			self.end_of_song_signal.store(0, Ordering::Relaxed);
 		}
 
 		// Loop queue
 		if self.empty() {
+			if self.songs_queue.len() != 0 {
+				let path_song_to_play = self.songs_queue[0].get("path").expect("Can't retrieve path of the song file !");
+				let file = File::open(path_song_to_play).expect("Unable to open file !");
+				let source = Decoder::new_mp3(file).expect("Unable to make a MP3 Decoder !");
+				self.sink.append(source);
+				self.add_signal_end_song();
+			}
 			for song_id in 0..self.songs_loop.len() {
 				let path = self.songs_loop[song_id].get("path").expect("Can't retrieve path of the song file !").to_owned();
 				self.add_song_to_queue(&path);
