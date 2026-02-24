@@ -17,8 +17,6 @@ use ratatui::{
 };
 use rodio::{OutputStreamBuilder, Sink};
 use std::io;
-use std::sync::atomic::AtomicU32;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio;
 use tokio::sync::watch::{self, Receiver, Sender};

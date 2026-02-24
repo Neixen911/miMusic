@@ -92,7 +92,7 @@ impl Player {
 
 	// Return loop value
 	pub fn get_loop(&mut self) -> String {
-		let mut loop_value: String;
+		let loop_value: String;
 		match self.songs_loop.len() {
 			0		=> { loop_value = String::from(""); },
 			1		=> { loop_value = String::from("Song loop"); },
