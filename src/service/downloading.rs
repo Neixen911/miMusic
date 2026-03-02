@@ -52,7 +52,7 @@ impl Service for DownloadingService {
         
         let download_border_style = if is_active {Color::Magenta} else {Color::Reset};
         let downloading_section = Block::default()
-            .title(Line::from("Download URL"))
+            .title(Line::from("Audio processing"))
             .borders(ratatui::widgets::Borders::ALL)
             .border_style(download_border_style);
         frame.render_widget(downloading_section, area);

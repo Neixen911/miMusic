@@ -41,6 +41,7 @@ async fn main() -> io::Result<()> {
         input_song_datas: Vec::new(),
         input_modify_playlists: "".to_string(),
         downloading_started: false,
+        normalization_started: false,
         loop_value: Loop::None,
         is_running: false,
         is_answer_positive: false,
@@ -64,6 +65,7 @@ pub struct App {
     input_song_datas: Vec<(String, String)>,
     input_modify_playlists: String,
     downloading_started: bool,
+    normalization_started: bool,
     loop_value: Loop,
     is_running: bool,
     is_answer_positive: bool,
@@ -122,6 +124,18 @@ impl App {
                 self.downloading_service.set_input_downloading("Download successfull !".to_string());
             }
         }
+
+        if self.normalization_started == true {
+            let (normalizing_index, normalizing_total, normalizing_percent) = *receiver.borrow();
+            if normalizing_total != 0 && normalizing_percent < 100.0 {
+                self.downloading_service.state_download = normalizing_percent / 100.0;
+                self.downloading_service.set_input_downloading(format!("Normalize process: {}/{} song(s)", normalizing_index, normalizing_total));
+            } else {
+                self.downloading_service.state_download = 0.0;
+                self.normalization_started = false;
+                self.downloading_service.set_input_downloading("Normalization process successfull !".to_string());
+            }
+        }
         
         // Update all songs
         self.songs_service.set_all_songs(self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
@@ -150,8 +164,9 @@ impl App {
                     KeyCode::Enter                  => { self.enter_action(); },
                     KeyCode::Up                     => { self.songs_service.previous(); },
                     KeyCode::Down                   => { self.songs_service.next(); },
-                    KeyCode::Char('m')              => { self.display_popup("modify_song") },
+                    KeyCode::Char('m')              => { self.display_popup("modify_song"); },
                     KeyCode::Char('l')              => { self.set_favorites(); },
+                    KeyCode::Char('n')              => { self.display_popup("normalize_song"); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     KeyCode::Char('a')              => { self.display_popup("add_song"); },
                     KeyCode::Delete                 => { self.display_popup("remove_song"); },
@@ -177,7 +192,7 @@ impl App {
                     KeyCode::Right                  => { self.downloading_service.input_downloading.right_input_position(); },
                     KeyCode::Enter                  => {
                         let input_downloading = self.downloading_service.input_downloading.get_input();
-                        self.download_songs_from_url(input_downloading, sender).await;
+                        self.download_songs_from_url(input_downloading, sender);
                     },
                     KeyCode::Backspace              => { self.downloading_service.input_downloading.remove_previous_char_from_input(); },
                     KeyCode::Delete                 => { self.downloading_service.input_downloading.remove_next_char_from_input(); },
@@ -246,6 +261,14 @@ impl App {
             "remove_popup_songs" => {
                 match key_event.code {
                     KeyCode::Enter                  => { self.remove_or_not_song(); },
+                    KeyCode::Tab                    => { self.switch_answer(); },
+                    KeyCode::Esc                    => { self.next_mode(); }
+                    _ => {}
+                }
+            }
+            "normalize_popup_songs" => {
+                match key_event.code {
+                    KeyCode::Enter                  => { self.normalize_or_not_song(sender); },
                     KeyCode::Tab                    => { self.switch_answer(); },
                     KeyCode::Esc                    => { self.next_mode(); }
                     _ => {}
@@ -436,6 +459,10 @@ impl App {
                 next_mode = "songs";
                 self.active_service = ServiceName::SONGS;
             }
+            "normalize_popup_songs" => {
+                next_mode = "songs";
+                self.active_service = ServiceName::SONGS;
+            }
             &_ => {
                 next_mode = "";
                 self.active_service = ServiceName::NONE;
@@ -467,9 +494,19 @@ impl App {
                 let modify_song_infos = self.songs_service.get_modify_song_infos();
                 self.input_song_datas = Vec::new();
                 for (entitled_name, entitled_content) in modify_song_infos {
-                    let entitled_name_formatted = entitled_name;
-                    let entitled_content_formatted = entitled_content;
-                    self.input_song_datas.push((entitled_name_formatted, entitled_content_formatted));
+                    let entitled_name_formatted: String;
+                    match entitled_name.as_str() {
+                        "TIT2" => {
+                            entitled_name_formatted = "Title".to_string();
+                        }
+                        "TPE1" => {
+                            entitled_name_formatted = "Artist".to_string();
+                        }
+                        _default => {
+                            continue;
+                        }
+                    }
+                    self.input_song_datas.push((entitled_name_formatted, entitled_content));
                 }
                 self.song_infos_state.select(Some(0));
                 self.mode = "modify_popup_songs".to_string();
@@ -479,6 +516,9 @@ impl App {
             }
             "remove_song" => {
                 self.mode = "remove_popup_songs".to_string();
+            }
+            "normalize_song" => {
+                self.mode = "normalize_popup_songs".to_string();
             }
             &_ => {}
         }
@@ -501,7 +541,27 @@ impl App {
         if self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !") < self.songs_service.get_modify_song_infos().len() - 1 {
             self.next();
         } else {
-            self.songs_service.modifying_metadata(&self.input_song_datas);
+            let mut formatted_infos: Vec<(String, String)> = Vec::new();
+            for (title, content) in &self.input_song_datas {
+                match title.as_str() {
+                    "Title" => {
+                        formatted_infos.push(("TIT2".to_string(), content.to_string()));
+                    }
+                    "Artist" => {
+                        formatted_infos.push(("TPE1".to_string(), content.to_string()));
+                    }
+                    _default => {
+                        continue;
+                    }
+                }
+            }
+
+            music::modifying_metadata(
+                self.songs_service.get_all_songs()[
+                    self.songs_service.get_songs_state().expect("Can't retrieve active song id !")
+                ].get("path").expect("Can't retrieve path of song file !").to_string(),
+                &formatted_infos
+            );
             self.next_mode();
         }
     }
@@ -534,6 +594,13 @@ impl App {
                 .expect("Can't retrieve path of the selected song !")
                 .to_string();
             self.player.remove_song(song_to_remove);
+        }
+        self.next_mode();
+    }
+
+    fn normalize_or_not_song(&mut self, sender: Sender<(u32, u32, f64)>) {
+        if self.is_answer_positive {
+            self.normalize_songs(sender);
         }
         self.next_mode();
     }
@@ -579,11 +646,18 @@ impl App {
         }
     }
 
-    async fn download_songs_from_url(&mut self, url: String, sender: Sender<(u32, u32, f64)>) {
+    fn download_songs_from_url(&mut self, url: String, sender: Sender<(u32, u32, f64)>) {
         self.downloading_service.set_input_downloading("Starting to fetch datas from YouTube URL ...".to_string());
         self.downloading_started = true;
         tokio::spawn( async move {
             music::download_song(sender, url).await;
+        });
+    }
+
+    fn normalize_songs(&mut self, sender: Sender<(u32, u32, f64)>) {
+        self.normalization_started = true;
+        tokio::spawn( async move {
+            music::normalize_songs(sender).await;
         });
     }
 
@@ -623,7 +697,7 @@ impl App {
         let hotkeys_text: &str;
         match self.mode.as_str() {
             "songs" => {
-                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Normalize <N> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
             }
             "playing" => {
                 hotkeys_text = "Play/Pause <Space> - Loop <T> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Switch Mode <Tab> - Quit <Q>";
@@ -644,13 +718,16 @@ impl App {
                 hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
             }
             "modify_popup_songs" => {
-                hotkeys_text = "Modify <Enter> - Close <Esc>"
+                hotkeys_text = "Modify <Enter> - Close <Esc>";
             }
             "add_popup_songs" => {
                 hotkeys_text = "Navigate <Up/Down> - Add <Enter> - Close <Esc>";
             }
             "remove_popup_songs" => {
-                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>"
+                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
+            }
+            "normalize_popup_songs" => {
+                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
             }
             &_ => {
                 hotkeys_text = "";
@@ -694,6 +771,11 @@ impl App {
                 }
                 "remove_popup_songs" => {
                     popup_question = format!("Do you really want to delete '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
+                    answers_type = "binary";
+                    answer_height = Constraint::Max(1);
+                }
+                "normalize_popup_songs" => {
+                    popup_question = format!("Do you want to launch normalizations songs process ?");
                     answers_type = "binary";
                     answer_height = Constraint::Max(1);
                 }
