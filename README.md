@@ -1,6 +1,6 @@
 # miMusic
 
-miMusic is a high-performance audio player designed specifically for embedded systems. Developed entirely in Rust, it combines a TUI with complete playlist management and an integrated download system. Its architecture aims to be lightweight and responsive to ensure smooth audio playback while consuming minimal system resources.
+miMusic is a high-performance audio player designed specifically for lightweight systems. Developed entirely in Rust, it combines a TUI with complete playlist management and an integrated download system. Its architecture aims to be optimised and responsive to ensure smooth audio playback while consuming minimal system resources.
 
 Here’s a preview of miMusic’s terminal interface:
 
@@ -19,6 +19,15 @@ Now, to run the app, you will need to run ```cargo run --bin miMusic```.
 You will see the interface and now, you are capable to use it on your own with keyboards shortcuts in the bottom of the app.
 
 I'm pretty open to suggestions and be extremely happy to know that the app would be helping you ! Enjoy it !
+
+## Main Features
+
+- **TUI Interface**
+- **Playback Controls**
+- **Songs Library**
+- **Playlist Management**
+- **Integrated Download System**
+- **Normalized Audio System**
 
 ## Technical Information
 
