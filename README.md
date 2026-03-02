@@ -22,12 +22,12 @@ I'm pretty open to suggestions and be extremely happy to know that the app would
 
 ## Main Features
 
-- **TUI Interface**
-- **Playback Controls**
+- TUI Interface
+- Playback Controls
 - **Songs Library**
-- **Playlist Management**
-- **Integrated Download System**
-- **Normalized Audio System**
+- Playlist Management
+- Integrated Download System
+- Normalized Audio System
 
 ## Technical Information
 
