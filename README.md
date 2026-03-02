@@ -24,7 +24,7 @@ I'm pretty open to suggestions and be extremely happy to know that the app would
 
 - TUI Interface
 - Playback Controls
-- **Songs Library**
+- Songs Library
 - Playlist Management
 - Integrated Download System
 - Normalized Audio System
