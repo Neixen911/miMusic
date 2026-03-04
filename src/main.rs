@@ -180,6 +180,7 @@ impl App {
                     KeyCode::Up                     => { self.volume_up(); },
                     KeyCode::Down                   => { self.volume_down(); },
                     KeyCode::Char('t')              => { self.next_songs_loop(); },
+                    KeyCode::BackTab                => { self.player.shuffle_queue(); },
                     KeyCode::Left                   => { self.skip_song(2); },
                     KeyCode::Right                  => { self.skip_song(1); },
                     KeyCode::Tab                    => { self.switch_mode(); },
@@ -700,7 +701,7 @@ impl App {
                 hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Normalize <N> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
             }
             "playing" => {
-                hotkeys_text = "Play/Pause <Space> - Loop <T> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Play/Pause <Space> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Shuffle <Backtab> - Loop <T> - Switch Mode <Tab> - Quit <Q>";
             }
             "download" => {
                 hotkeys_text = "Navigate <Left/Right> - Download <Enter> - Switch Mode <Tab>";

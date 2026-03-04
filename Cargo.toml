@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 futures-util = "0.3.31"
 id3 = "1.16.2"
+rand = "0.8"
 ratatui = "0.29.0"
 rodio = { version = "0.21.1", default-features = false, features = ["playback", "symphonia-mp3"] }
 serde = { version = "1.0.219", features = ["derive"] }

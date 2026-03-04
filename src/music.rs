@@ -1,4 +1,6 @@
 use id3::{Content, Frame as Id3Frame, Tag, TagLike, Version};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use rodio::{Decoder, Sink, source::EmptyCallback};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -102,6 +104,14 @@ impl Player {
 		loop_value
 	}
 
+	// Shuffle the queue
+	pub fn shuffle_queue(&mut self) {
+		let playing_song = self.songs_queue.remove(0);
+		let mut rng = thread_rng();
+    	self.songs_queue.shuffle(&mut rng);
+		self.songs_queue.insert(0, playing_song);
+	}
+
 	// Return if Sink is empty or not
 	pub fn empty(&mut self) -> bool {
 		self.sink.empty()
@@ -137,7 +147,7 @@ impl Player {
 			if self.songs_loop.len() == 1 {
 				self.add_song_to_queue(&self.songs_loop[0].get("path").expect("Can't retrieve path of the song file !").to_owned());
 			}
-			// Listening way (previous or next)
+			// Listening way (next or previous)
 			match self.end_of_song_signal.load(Ordering::Relaxed) {
 				1 => {
 					self.previous_songs_queue.push(self.songs_queue.remove(0));
