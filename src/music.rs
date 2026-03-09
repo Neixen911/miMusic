@@ -1,3 +1,4 @@
+use archive::{ArchiveExtractor, ArchiveFormat};
 use id3::{Content, Frame as Id3Frame, Tag, TagLike, Version};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -5,6 +6,7 @@ use rodio::{Decoder, Sink, source::EmptyCallback};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File, read_to_string, read_dir, remove_file, rename};
+use std::os::unix::fs::PermissionsExt;
 use std::io::{BufWriter, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -15,6 +17,7 @@ use symphonia::default::get_probe;
 use tokio::sync::watch::Sender;
 
 const OUTPUT_FILE_FORMAT: &str = "mp3";
+const OS: &str = std::env::consts::OS;
 const ARCH: &str = std::env::consts::ARCH;
 
 #[derive(Copy, Clone)]
@@ -469,13 +472,102 @@ impl Player {
 	}
 }
 
+// Return extension of librairies files
+pub fn get_extension() -> String {
+	let ytdlp_ext: &str = match (OS, ARCH) {
+		("windows", "x86_64") 		=> "_x86.exe",
+		("windows", "aarch64") 		=> "_aarch64.exe",
+		("linux", "x86_64") 		=> "_x86",
+		("linux", "aarch64") 		=> "_linux_aarch64",
+		_ => ""
+	};
+
+	ytdlp_ext.to_string()
+}
+
+// Return filename of librairies to download
+pub fn get_download_filename() -> (String, String, String, String) {
+	let ytdlp_suffix = get_extension();
+	let ytdlp_url = format!("https://github.com/yt-dlp/yt-dlp/releases/download/2026.03.03/yt-dlp{}", ytdlp_suffix);
+
+	let (ffmpeg_url, ffmpeg_suffix) = match (OS, ARCH) {
+		("windows", _) 				=> ("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.7z", ".7z"),
+		("linux", "x86_64") 		=> ("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz", ".tar.xz"),
+		("linux", "aarch64") 		=> ("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz", ".tar.xz"),
+		_ => ("", "")
+	};
+
+	(ytdlp_url.to_string(), ytdlp_suffix, ffmpeg_url.to_string(), ffmpeg_suffix.to_string())
+}
+
 // Download song from a unique URL
 pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
-    let libraries_dir = PathBuf::from("libs");
-    let yt_dlp = libraries_dir.join(format!("yt-dlp-{ARCH}"));
-    let output_dir = PathBuf::from("songs");
+	let libraries_dir = PathBuf::from("libs");
+	let mut yt_dlp = PathBuf::new();
+	let mut ffmpeg = PathBuf::new();
+	if !libraries_dir.is_empty() {
+		let (ytdlp_download_url, ytdlp_extension, ffmpeg_download_url, ffmpeg_extension) = get_download_filename();
+		println!("{}", &ffmpeg_download_url);
 
-	let ffmpeg_location = libraries_dir.join(format!("ffmpeg-{ARCH}"));
+		// Download ytdlp
+		yt_dlp = libraries_dir.join(format!("ytdlp{}", ytdlp_extension));
+		let mut destination = File::create(&yt_dlp).expect("Can't create library file");
+		let bytes = reqwest::get(ytdlp_download_url).await.expect("Can't download ytdlp binary !")
+			.bytes().await.expect("Can't retrieve ytdlp binary content !");
+		let _ = destination.write_all(&bytes);
+		let mode = 0o755;
+		let mut permissions = destination.metadata().expect("Can't retrieve ytdlp destination file metadata !").permissions();
+		permissions.set_mode(mode);
+		destination.set_permissions(permissions).expect("Can't set new permissions to ytdlp file !");
+
+		// Download ffmpeg
+		let ffmpeg_filename = libraries_dir.join(format!("ffmpeg{}", ffmpeg_extension));
+		let mut ffmpeg_destination = File::create(&ffmpeg_filename).expect("Can't create library file");
+		let ffmpeg_bytes = reqwest::get(ffmpeg_download_url).await.expect("Can't download ffmpeg compressed file !")
+			.bytes().await.expect("Can't retrieve ffmpeg compressed file !");
+		let _ = ffmpeg_destination.write_all(&ffmpeg_bytes);
+		let decompress_format = match OS {
+			"windows" 	=> ArchiveFormat::SevenZ,
+			"linux"		=> ArchiveFormat::TarXz,
+			_default	=> ArchiveFormat::TarXz
+		};
+		let files = ArchiveExtractor::new().extract(&fs::read(&ffmpeg_filename).unwrap(), decompress_format).unwrap();
+		let mut ext = "";
+		if "windows" == OS {
+			ext = ".exe";
+		}
+		ffmpeg = libraries_dir.join(format!("ffmpeg{}", ext));
+		let mut ffmpeg_content = Vec::new();
+		for file in files {
+			if file.path.contains(&format!("ffmpeg{}", ext)) {
+				println!("{}", file.path);
+				ffmpeg_content = file.data;
+			}
+		}
+		let mut ffmpeg_dest = File::create(&ffmpeg).expect("Can't create library file");
+		let _ = ffmpeg_dest.write_all(&ffmpeg_content);
+		let ffmpeg_mode = 0o755;
+		let mut ffmpeg_permissions = ffmpeg_dest.metadata().expect("Can't retrieve ffmpeg destination file metadata !").permissions();
+		ffmpeg_permissions.set_mode(ffmpeg_mode);
+		ffmpeg_dest.set_permissions(ffmpeg_permissions).expect("Can't set new permissions to ffmpeg file !");
+	} else {
+		for filename in read_dir(&libraries_dir).expect("Can't iter over library folder !") {
+			let path = filename.expect("Can't retrieve file !").path();
+			let path_str = path.as_path().to_str().expect("Can't convert path to str !");
+			if path_str.contains("ytdlp") {
+				yt_dlp = path;
+			} else if path_str.contains("ffmpeg") {
+				ffmpeg = path;
+			}
+		}
+	}
+	
+	if yt_dlp.is_empty() || ffmpeg.is_empty() {
+		let _ = sender.send((0, 0, -99.9));
+		return;
+	}
+
+    let output_dir = PathBuf::from("songs");
 	let filename = output_dir.join("%(id)s");
 
 	let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
@@ -487,7 +579,7 @@ pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
 		"-x", 
 		"--audio-format", OUTPUT_FILE_FORMAT, 
 		"--add-metadata", 
-		"--ffmpeg-location", ffmpeg_location.to_str().expect("Unable to convert to str"), 
+		"--ffmpeg-location", ffmpeg.to_str().expect("Unable to convert to str"), 
 		"-o", filename.to_str().expect("Unable to convert to str"), 
 		&song_url, 
 	])

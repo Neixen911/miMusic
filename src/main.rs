@@ -1,4 +1,5 @@
 #![feature(str_split_remainder)]
+#![feature(path_is_empty)]
 
 mod music;
 mod service;
@@ -122,6 +123,10 @@ impl App {
                 self.downloading_service.state_download = 0.0;
                 self.downloading_started = false;
                 self.downloading_service.set_input_downloading("Download successfull !".to_string());
+            }
+            if downlading_percent == -99.9 {
+                self.downloading_started = false;
+                self.downloading_service.set_input_downloading("Unsupported architecture ! Please report it to making an issue in Github !".to_string());
             }
         }
 
