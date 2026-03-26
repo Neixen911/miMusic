@@ -6,7 +6,6 @@ use rodio::{Decoder, Sink, source::EmptyCallback};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File, read_to_string, read_dir, remove_file, rename};
-use std::os::unix::fs::PermissionsExt;
 use std::io::{BufWriter, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -15,6 +14,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
 use tokio::sync::watch::Sender;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(windows)]
+use std::os::windows::fs::PermissionsExt;
 
 const OUTPUT_FILE_FORMAT: &str = "mp3";
 const OS: &str = std::env::consts::OS;
@@ -500,65 +504,118 @@ pub fn get_download_filename() -> (String, String, String, String) {
 	(ytdlp_url.to_string(), ytdlp_suffix, ffmpeg_url.to_string(), ffmpeg_suffix.to_string())
 }
 
+// Unix version of downloading librairies
+#[cfg(unix)]
+pub async fn download_libs(libraries_dir: &PathBuf) {
+	let (ytdlp_download_url, ytdlp_extension, ffmpeg_download_url, ffmpeg_extension) = get_download_filename();
+	println!("{}", &ffmpeg_download_url);
+
+	// Download ytdlp
+	let yt_dlp = libraries_dir.join(format!("ytdlp{}", ytdlp_extension));
+	let mut destination = File::create(&yt_dlp).expect("Can't create library file");
+	let bytes = reqwest::get(ytdlp_download_url).await.expect("Can't download ytdlp binary !")
+		.bytes().await.expect("Can't retrieve ytdlp binary content !");
+	let _ = destination.write_all(&bytes);
+	let mode = 0o755;
+	let mut permissions = destination.metadata().expect("Can't retrieve ytdlp destination file metadata !").permissions();
+	permissions.set_mode(mode);
+	destination.set_permissions(permissions).expect("Can't set new permissions to ytdlp file !");
+
+	// Download ffmpeg
+	let ffmpeg_filename = libraries_dir.join(format!("ffmpeg{}", ffmpeg_extension));
+	let mut ffmpeg_destination = File::create(&ffmpeg_filename).expect("Can't create library file");
+	let ffmpeg_bytes = reqwest::get(ffmpeg_download_url).await.expect("Can't download ffmpeg compressed file !")
+		.bytes().await.expect("Can't retrieve ffmpeg compressed file !");
+	let _ = ffmpeg_destination.write_all(&ffmpeg_bytes);
+	let decompress_format = match OS {
+		"windows" 	=> ArchiveFormat::SevenZ,
+		"linux"		=> ArchiveFormat::TarXz,
+		_default	=> ArchiveFormat::TarXz
+	};
+	let files = ArchiveExtractor::new().extract(&fs::read(&ffmpeg_filename).unwrap(), decompress_format).unwrap();
+	let mut ext = "";
+	if "windows" == OS {
+		ext = ".exe";
+	}
+	let ffmpeg = libraries_dir.join(format!("ffmpeg{}", ext));
+	let mut ffmpeg_content = Vec::new();
+	for file in files {
+		if file.path.contains(&format!("ffmpeg{}", ext)) {
+			println!("{}", file.path);
+			ffmpeg_content = file.data;
+		}
+	}
+	let mut ffmpeg_dest = File::create(&ffmpeg).expect("Can't create library file");
+	let _ = ffmpeg_dest.write_all(&ffmpeg_content);
+	let ffmpeg_mode = 0o755;
+	let mut ffmpeg_permissions = ffmpeg_dest.metadata().expect("Can't retrieve ffmpeg destination file metadata !").permissions();
+	ffmpeg_permissions.set_mode(ffmpeg_mode);
+	ffmpeg_dest.set_permissions(ffmpeg_permissions).expect("Can't set new permissions to ffmpeg file !");
+}
+
+// Windows version of downloading librairies
+#[cfg(windows)]
+pub async fn download_libs(libraries_dir: &PathBuf) {
+	let (ytdlp_download_url, ytdlp_extension, ffmpeg_download_url, ffmpeg_extension) = get_download_filename();
+	println!("{}", &ffmpeg_download_url);
+
+	// Download ytdlp
+	let yt_dlp = libraries_dir.join(format!("ytdlp{}", ytdlp_extension));
+	let mut destination = File::create(&yt_dlp).expect("Can't create library file");
+	let bytes = reqwest::get(ytdlp_download_url).await.expect("Can't download ytdlp binary !")
+		.bytes().await.expect("Can't retrieve ytdlp binary content !");
+	let _ = destination.write_all(&bytes);
+	let mut permissions = destination.metadata().expect("Can't retrieve ytdlp destination file metadata !").permissions();
+	permissions.set_readonly(false);
+	destination.set_permissions(permissions).expect("Can't set new permissions to ytdlp file !");
+
+	// Download ffmpeg
+	let ffmpeg_filename = libraries_dir.join(format!("ffmpeg{}", ffmpeg_extension));
+	let mut ffmpeg_destination = File::create(&ffmpeg_filename).expect("Can't create library file");
+	let ffmpeg_bytes = reqwest::get(ffmpeg_download_url).await.expect("Can't download ffmpeg compressed file !")
+		.bytes().await.expect("Can't retrieve ffmpeg compressed file !");
+	let _ = ffmpeg_destination.write_all(&ffmpeg_bytes);
+	let decompress_format = match OS {
+		"windows" 	=> ArchiveFormat::SevenZ,
+		"linux"		=> ArchiveFormat::TarXz,
+		_default	=> ArchiveFormat::TarXz
+	};
+	let files = ArchiveExtractor::new().extract(&fs::read(&ffmpeg_filename).unwrap(), decompress_format).unwrap();
+	let mut ext = "";
+	if "windows" == OS {
+		ext = ".exe";
+	}
+	let ffmpeg = libraries_dir.join(format!("ffmpeg{}", ext));
+	let mut ffmpeg_content = Vec::new();
+	for file in files {
+		if file.path.contains(&format!("ffmpeg{}", ext)) {
+			println!("{}", file.path);
+			ffmpeg_content = file.data;
+		}
+	}
+	let mut ffmpeg_dest = File::create(&ffmpeg).expect("Can't create library file");
+	let _ = ffmpeg_dest.write_all(&ffmpeg_content);
+	let mut ffmpeg_permissions = ffmpeg_dest.metadata().expect("Can't retrieve ffmpeg destination file metadata !").permissions();
+	ffmpeg_permissions.set_readonly(false);
+	ffmpeg_dest.set_permissions(ffmpeg_permissions).expect("Can't set new permissions to ffmpeg file !");
+}
+
 // Download song from a unique URL
 pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
 	let libraries_dir = PathBuf::from("libs");
+	if !libraries_dir.is_empty() {
+		let _ = download_libs(&libraries_dir).await;
+	}
+
 	let mut yt_dlp = PathBuf::new();
 	let mut ffmpeg = PathBuf::new();
-	if !libraries_dir.is_empty() {
-		let (ytdlp_download_url, ytdlp_extension, ffmpeg_download_url, ffmpeg_extension) = get_download_filename();
-		println!("{}", &ffmpeg_download_url);
-
-		// Download ytdlp
-		yt_dlp = libraries_dir.join(format!("ytdlp{}", ytdlp_extension));
-		let mut destination = File::create(&yt_dlp).expect("Can't create library file");
-		let bytes = reqwest::get(ytdlp_download_url).await.expect("Can't download ytdlp binary !")
-			.bytes().await.expect("Can't retrieve ytdlp binary content !");
-		let _ = destination.write_all(&bytes);
-		let mode = 0o755;
-		let mut permissions = destination.metadata().expect("Can't retrieve ytdlp destination file metadata !").permissions();
-		permissions.set_mode(mode);
-		destination.set_permissions(permissions).expect("Can't set new permissions to ytdlp file !");
-
-		// Download ffmpeg
-		let ffmpeg_filename = libraries_dir.join(format!("ffmpeg{}", ffmpeg_extension));
-		let mut ffmpeg_destination = File::create(&ffmpeg_filename).expect("Can't create library file");
-		let ffmpeg_bytes = reqwest::get(ffmpeg_download_url).await.expect("Can't download ffmpeg compressed file !")
-			.bytes().await.expect("Can't retrieve ffmpeg compressed file !");
-		let _ = ffmpeg_destination.write_all(&ffmpeg_bytes);
-		let decompress_format = match OS {
-			"windows" 	=> ArchiveFormat::SevenZ,
-			"linux"		=> ArchiveFormat::TarXz,
-			_default	=> ArchiveFormat::TarXz
-		};
-		let files = ArchiveExtractor::new().extract(&fs::read(&ffmpeg_filename).unwrap(), decompress_format).unwrap();
-		let mut ext = "";
-		if "windows" == OS {
-			ext = ".exe";
-		}
-		ffmpeg = libraries_dir.join(format!("ffmpeg{}", ext));
-		let mut ffmpeg_content = Vec::new();
-		for file in files {
-			if file.path.contains(&format!("ffmpeg{}", ext)) {
-				println!("{}", file.path);
-				ffmpeg_content = file.data;
-			}
-		}
-		let mut ffmpeg_dest = File::create(&ffmpeg).expect("Can't create library file");
-		let _ = ffmpeg_dest.write_all(&ffmpeg_content);
-		let ffmpeg_mode = 0o755;
-		let mut ffmpeg_permissions = ffmpeg_dest.metadata().expect("Can't retrieve ffmpeg destination file metadata !").permissions();
-		ffmpeg_permissions.set_mode(ffmpeg_mode);
-		ffmpeg_dest.set_permissions(ffmpeg_permissions).expect("Can't set new permissions to ffmpeg file !");
-	} else {
-		for filename in read_dir(&libraries_dir).expect("Can't iter over library folder !") {
-			let path = filename.expect("Can't retrieve file !").path();
-			let path_str = path.as_path().to_str().expect("Can't convert path to str !");
-			if path_str.contains("ytdlp") {
-				yt_dlp = path;
-			} else if path_str.contains("ffmpeg") {
-				ffmpeg = path;
-			}
+	for filename in read_dir(&libraries_dir).expect("Can't iter over library folder !") {
+		let path = filename.expect("Can't retrieve file !").path();
+		let path_str = path.as_path().to_str().expect("Can't convert path to str !");
+		if path_str.contains("ytdlp") {
+			yt_dlp = path;
+		} else if path_str.contains("ffmpeg") {
+			ffmpeg = path;
 		}
 	}
 	
