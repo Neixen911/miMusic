@@ -1,4 +1,5 @@
 #![feature(str_split_remainder)]
+#![feature(path_is_empty)]
 
 mod music;
 mod service;
@@ -123,6 +124,16 @@ impl App {
                 self.downloading_started = false;
                 self.downloading_service.set_input_downloading("Download successfull !".to_string());
             }
+            if downlading_percent == -2.0 {
+                self.downloading_service.set_input_downloading("Starting to fetch datas from YouTube URL ...".to_string());
+            }
+            if downlading_percent == -98.0 {
+                self.downloading_service.set_input_downloading("Installing librairies ...".to_string());
+            }
+            if downlading_percent == -99.0 {
+                self.downloading_started = false;
+                self.downloading_service.set_input_downloading("Unsupported architecture ! Please report it to making an issue in Github !".to_string());
+            }
         }
 
         if self.normalization_started == true {
@@ -180,6 +191,7 @@ impl App {
                     KeyCode::Up                     => { self.volume_up(); },
                     KeyCode::Down                   => { self.volume_down(); },
                     KeyCode::Char('t')              => { self.next_songs_loop(); },
+                    KeyCode::BackTab                => { self.player.shuffle_queue(); },
                     KeyCode::Left                   => { self.skip_song(2); },
                     KeyCode::Right                  => { self.skip_song(1); },
                     KeyCode::Tab                    => { self.switch_mode(); },
@@ -647,7 +659,6 @@ impl App {
     }
 
     fn download_songs_from_url(&mut self, url: String, sender: Sender<(u32, u32, f64)>) {
-        self.downloading_service.set_input_downloading("Starting to fetch datas from YouTube URL ...".to_string());
         self.downloading_started = true;
         tokio::spawn( async move {
             music::download_song(sender, url).await;
@@ -700,7 +711,7 @@ impl App {
                 hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Normalize <N> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
             }
             "playing" => {
-                hotkeys_text = "Play/Pause <Space> - Loop <T> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Play/Pause <Space> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Shuffle <Backtab> - Loop <T> - Switch Mode <Tab> - Quit <Q>";
             }
             "download" => {
                 hotkeys_text = "Navigate <Left/Right> - Download <Enter> - Switch Mode <Tab>";
