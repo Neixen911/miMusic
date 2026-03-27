@@ -476,7 +476,8 @@ impl Player {
 
 // Function to return the ffmpeg path
 pub fn get_ffmpeg_path() -> PathBuf {
-	let mut path = PathBuf::from("libs").join("ffmpeg");
+	let libraries_dir = PathBuf::from("libs");
+	let mut path = libraries_dir.join("ffmpeg");
 
 	for file in read_dir(&libraries_dir).expect("Can't iter over library folder !") {
 		let filename = file.expect("Can't retrieve lib file !").path();
