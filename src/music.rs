@@ -474,6 +474,20 @@ impl Player {
 	}
 }
 
+// Function to return the ffmpeg path
+pub fn get_ffmpeg_path() -> PathBuf {
+	let mut path = PathBuf::from("libs").join("ffmpeg");
+
+	for file in read_dir(&libraries_dir).expect("Can't iter over library folder !") {
+		let filename = file.expect("Can't retrieve lib file !").path();
+		if filename.to_str().expect("Can't convert PathBuf into str !").contains("ffmpeg") {
+			path = filename;
+		}
+	}
+
+	path
+}
+
 // Return filename of librairies to download
 pub fn get_download_filename() -> (String, String, String, String, String) {
 	let ytdlp_suffix = match (OS, ARCH) {
@@ -662,8 +676,8 @@ pub fn modifying_metadata(filepath: String, new_song_datas: &Vec<(String, String
 // Normalize songs which required to normalize
 pub async fn normalize_songs(sender: Sender<(u32, u32, f64)>) {
 	let libraries_dir = PathBuf::from("libs");
+	let ffmpeg = get_ffmpeg_path();
 	let songs_dir = PathBuf::from("songs");
-	let ffmpeg = libraries_dir.join(format!("ffmpeg-{ARCH}"));
 
 	let mut songs_to_normalized = Vec::new();
 	for song in read_dir(songs_dir).expect("Can't iterate over songs folder !") {
