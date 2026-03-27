@@ -124,12 +124,15 @@ impl App {
                 self.downloading_started = false;
                 self.downloading_service.set_input_downloading("Download successfull !".to_string());
             }
-            if downlading_percent == -99.0 {
-                self.downloading_started = false;
-                self.downloading_service.set_input_downloading("Unsupported architecture ! Please report it to making an issue in Github !".to_string());
+            if downlading_percent == -2.0 {
+                self.downloading_service.set_input_downloading("Starting to fetch datas from YouTube URL ...".to_string());
             }
             if downlading_percent == -98.0 {
                 self.downloading_service.set_input_downloading("Installing librairies ...".to_string());
+            }
+            if downlading_percent == -99.0 {
+                self.downloading_started = false;
+                self.downloading_service.set_input_downloading("Unsupported architecture ! Please report it to making an issue in Github !".to_string());
             }
         }
 
@@ -656,7 +659,6 @@ impl App {
     }
 
     fn download_songs_from_url(&mut self, url: String, sender: Sender<(u32, u32, f64)>) {
-        self.downloading_service.set_input_downloading("Starting to fetch datas from YouTube URL ...".to_string());
         self.downloading_started = true;
         tokio::spawn( async move {
             music::download_song(sender, url).await;
