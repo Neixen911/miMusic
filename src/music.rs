@@ -553,6 +553,9 @@ pub async fn download_libs(libraries_dir: &PathBuf) {
 
 // Download song from a unique URL
 pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
+	if !fs::exists("libs").expect("Non authorized folder check !") {
+		let _ = fs::create_dir("libs");
+	}
 	let libraries_dir = PathBuf::from("libs");
 	if read_dir(&libraries_dir).expect("Can't iter over library folder !").next().is_none() {
 		let _ = sender.send((0, 0, -98.0));
