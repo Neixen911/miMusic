@@ -124,9 +124,12 @@ impl App {
                 self.downloading_started = false;
                 self.downloading_service.set_input_downloading("Download successfull !".to_string());
             }
-            if downlading_percent == -99.9 {
+            if downlading_percent == -99.0 {
                 self.downloading_started = false;
                 self.downloading_service.set_input_downloading("Unsupported architecture ! Please report it to making an issue in Github !".to_string());
+            }
+            if downlading_percent == -98.0 {
+                self.downloading_service.set_input_downloading("Installing librairies ...".to_string());
             }
         }
 

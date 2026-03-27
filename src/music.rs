@@ -474,38 +474,36 @@ impl Player {
 	}
 }
 
-// Return extension of librairies files
-pub fn get_extension() -> String {
-	let ytdlp_ext: &str = match (OS, ARCH) {
+// Return filename of librairies to download
+pub fn get_download_filename() -> (String, String, String, String, String) {
+	let ytdlp_suffix = match (OS, ARCH) {
 		("windows", "x86_64") 		=> "_x86.exe",
 		("windows", "aarch64") 		=> "_aarch64.exe",
 		("linux", "x86_64") 		=> "_x86",
 		("linux", "aarch64") 		=> "_linux_aarch64",
 		_ => ""
 	};
-
-	ytdlp_ext.to_string()
-}
-
-// Return filename of librairies to download
-pub fn get_download_filename() -> (String, String, String, String) {
-	let ytdlp_suffix = get_extension();
 	let ytdlp_url = format!("https://github.com/yt-dlp/yt-dlp/releases/download/2026.03.03/yt-dlp{}", ytdlp_suffix);
 
-	let (ffmpeg_url, ffmpeg_suffix) = match (OS, ARCH) {
-		("windows", _) 				=> ("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.7z", ".7z"),
-		("linux", "x86_64") 		=> ("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz", ".tar.xz"),
-		("linux", "aarch64") 		=> ("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz", ".tar.xz"),
-		_ => ("", "")
+	let (ffmpeg_url, ffmpeg_suffix, ffmpeg_server_suffix) = match (OS, ARCH) {
+		("windows", _) 				=> ("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.7z", ".7z", ".exe"),
+		("linux", "x86_64") 		=> ("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz", ".tar.xz", ""),
+		("linux", "aarch64") 		=> ("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz", ".tar.xz", ""),
+		_ => ("", "", "")
 	};
 
-	(ytdlp_url.to_string(), ytdlp_suffix, ffmpeg_url.to_string(), ffmpeg_suffix.to_string())
+	(
+		ytdlp_url.to_string(),
+		ytdlp_suffix.to_string(),
+		ffmpeg_url.to_string(),
+		ffmpeg_suffix.to_string(),
+		ffmpeg_server_suffix.to_string()
+	)
 }
 
 // Downloading librairies
 pub async fn download_libs(libraries_dir: &PathBuf) {
-	let (ytdlp_download_url, ytdlp_extension, ffmpeg_download_url, ffmpeg_extension) = get_download_filename();
-	println!("{}", &ffmpeg_download_url);
+	let (ytdlp_download_url, ytdlp_extension, ffmpeg_download_url, ffmpeg_extension, ffmpeg_server_extension) = get_download_filename();
 
 	// Download ytdlp
 	let yt_dlp = libraries_dir.join(format!("ytdlp{}", ytdlp_extension));
@@ -521,8 +519,8 @@ pub async fn download_libs(libraries_dir: &PathBuf) {
 	destination.set_permissions(permissions).expect("Can't set new permissions to ytdlp file !");
 
 	// Download ffmpeg
-	let ffmpeg_filename = libraries_dir.join(format!("ffmpeg{}", ffmpeg_extension));
-	let mut ffmpeg_destination = File::create(&ffmpeg_filename).expect("Can't create library file");
+	let ffmpeg_archive_filename = libraries_dir.join(format!("ffmpeg{}", ffmpeg_extension));
+	let mut ffmpeg_destination = File::create(&ffmpeg_archive_filename).expect("Can't create library file");
 	let ffmpeg_bytes = reqwest::get(ffmpeg_download_url).await.expect("Can't download ffmpeg compressed file !")
 		.bytes().await.expect("Can't retrieve ffmpeg compressed file !");
 	let _ = ffmpeg_destination.write_all(&ffmpeg_bytes);
@@ -531,16 +529,13 @@ pub async fn download_libs(libraries_dir: &PathBuf) {
 		"linux"		=> ArchiveFormat::TarXz,
 		_default	=> ArchiveFormat::TarXz
 	};
-	let files = ArchiveExtractor::new().extract(&fs::read(&ffmpeg_filename).unwrap(), decompress_format).unwrap();
-	let mut ext = "";
-	if "windows" == OS {
-		ext = ".exe";
-	}
-	let ffmpeg = libraries_dir.join(format!("ffmpeg{}", ext));
+	let files = ArchiveExtractor::new().extract(&fs::read(&ffmpeg_archive_filename).unwrap(), decompress_format).unwrap();
+	let ffmpeg_filename = format!("ffmpeg{}", ffmpeg_server_extension);
+	let ffmpeg = libraries_dir.join(&ffmpeg_filename);
 	let mut ffmpeg_content = Vec::new();
 	for file in files {
-		if file.path.contains(&format!("ffmpeg{}", ext)) {
-			println!("{}", file.path);
+		let filename: Vec<&str> = file.path.split('/').collect();
+		if filename[filename.len() - 1] == &ffmpeg_filename {
 			ffmpeg_content = file.data;
 		}
 	}
@@ -552,12 +547,15 @@ pub async fn download_libs(libraries_dir: &PathBuf) {
 	#[cfg(unix)]
 	ffmpeg_permissions.set_mode(0o755);
 	ffmpeg_dest.set_permissions(ffmpeg_permissions).expect("Can't set new permissions to ffmpeg file !");
+
+	let _ = remove_file(&ffmpeg_archive_filename);
 }
 
 // Download song from a unique URL
 pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
 	let libraries_dir = PathBuf::from("libs");
-	if !libraries_dir.is_empty() {
+	if read_dir(&libraries_dir).expect("Can't iter over library folder !").next().is_none() {
+		let _ = sender.send((0, 0, -98.0));
 		let _ = download_libs(&libraries_dir).await;
 	}
 
@@ -574,7 +572,7 @@ pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
 	}
 	
 	if yt_dlp.is_empty() || ffmpeg.is_empty() {
-		let _ = sender.send((0, 0, -99.9));
+		let _ = sender.send((0, 0, -99.0));
 		return;
 	}
 
