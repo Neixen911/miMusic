@@ -131,6 +131,14 @@ impl App {
             if downlading_percent == -3.0 {
                 self.downloading_service.set_input_downloading("Starting to fetch datas from YouTube URL ...".to_string());
             }
+            if downlading_percent == -4.0 {
+                self.downloading_service.set_input_downloading("Check integrity and finalize ...".to_string());
+            }
+            if downlading_percent == -51.0 {
+                self.downloading_service.state_download = 0.0;
+                self.downloading_started = false;
+                self.downloading_service.set_input_downloading("Skip already downloaded songs and other ones successfully downloaded !".to_string());
+            }
             if downlading_percent == -99.0 {
                 self.downloading_started = false;
                 self.downloading_service.set_input_downloading("Unsupported architecture ! Please report it to making an issue in Github !".to_string());
