@@ -573,11 +573,11 @@ pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
 	}
 	let libraries_dir = PathBuf::from("libs");
 	if read_dir(&libraries_dir).expect("Can't iter over library folder !").next().is_none() {
-		let _ = sender.send((0, 0, -98.0));
+		let _ = sender.send((0, 0, -2.0));
 		let _ = download_libs(&libraries_dir).await;
 	}
 
-	let _ = sender.send((0, 0, -2.0));
+	let _ = sender.send((0, 0, -3.0));
 	let mut yt_dlp = PathBuf::new();
 	let mut ffmpeg = PathBuf::new();
 	for filename in read_dir(&libraries_dir).expect("Can't iter over library folder !") {
