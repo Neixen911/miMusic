@@ -139,6 +139,10 @@ impl App {
                 self.downloading_started = false;
                 self.downloading_service.set_input_downloading("Skip already downloaded songs and other ones successfully downloaded !".to_string());
             }
+            if downlading_percent == -98.0 {
+                self.downloading_started = false;
+                self.downloading_service.set_input_downloading("No internet connection !".to_string());
+            }
             if downlading_percent == -99.0 {
                 self.downloading_started = false;
                 self.downloading_service.set_input_downloading("Unsupported architecture ! Please report it to making an issue in Github !".to_string());

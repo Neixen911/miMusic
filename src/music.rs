@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File, read_to_string, read_dir, remove_file, rename};
 use std::io::{BufWriter, BufRead, BufReader, Write};
+use std::net::{Shutdown, TcpStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -568,6 +569,12 @@ pub async fn download_libs(libraries_dir: &PathBuf) {
 
 // Download song from a unique URL
 pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
+	if let Ok(stream) = TcpStream::connect("8.8.4.4:53") {
+		stream.shutdown(Shutdown::Both).expect("Can't shutdown stream check !");
+	} else {
+		let _ = sender.send((0, 0, -98.0));
+		return;
+	}
 	if !fs::exists("libs").expect("Non authorized folder check !") {
 		let _ = fs::create_dir("libs");
 	}
