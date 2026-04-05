@@ -493,9 +493,8 @@ pub fn get_ffmpeg_path() -> PathBuf {
 // Return filename of librairies to download
 pub fn get_download_filename() -> (String, String, String, String, String) {
 	let ytdlp_suffix = match (OS, ARCH) {
-		("windows", "x86_64") 		=> "_x86.exe",
-		("windows", "aarch64") 		=> "_aarch64.exe",
-		("linux", "x86_64") 		=> "_x86",
+		("windows", _) 				=> "_x86.exe",
+		("linux", "x86_64") 		=> "_linux",
 		("linux", "aarch64") 		=> "_linux_aarch64",
 		_ => ""
 	};
