@@ -116,19 +116,32 @@ impl App {
             if downloading_index != 0 && downloading_total != 0 {
                 index_of_total = format!("{}/{}", downloading_index, downloading_total);
             }
-            if downlading_percent > 0.0 && downlading_percent <= 99.0 {
+            if downlading_percent > 0.0 && downlading_percent <= 99.9 {
                 self.downloading_service.state_download = downlading_percent / 100.0;
                 self.downloading_service.set_input_downloading(format!("Download {}: {}%", index_of_total, downlading_percent));
-            } else if self.downloading_service.state_download > 0.0 && downlading_percent < 0.0 {
+            }
+            if downlading_percent == -1.0 {
                 self.downloading_service.state_download = 0.0;
                 self.downloading_started = false;
                 self.downloading_service.set_input_downloading("Download successfull !".to_string());
             }
             if downlading_percent == -2.0 {
+                self.downloading_service.set_input_downloading("Installing librairies ...".to_string());
+            }
+            if downlading_percent == -3.0 {
                 self.downloading_service.set_input_downloading("Starting to fetch datas from YouTube URL ...".to_string());
             }
+            if downlading_percent == -4.0 {
+                self.downloading_service.set_input_downloading("Check integrity and finalize ...".to_string());
+            }
+            if downlading_percent == -51.0 {
+                self.downloading_service.state_download = 0.0;
+                self.downloading_started = false;
+                self.downloading_service.set_input_downloading("Skip already downloaded songs and other ones successfully downloaded !".to_string());
+            }
             if downlading_percent == -98.0 {
-                self.downloading_service.set_input_downloading("Installing librairies ...".to_string());
+                self.downloading_started = false;
+                self.downloading_service.set_input_downloading("No internet connection !".to_string());
             }
             if downlading_percent == -99.0 {
                 self.downloading_started = false;

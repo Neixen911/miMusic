@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File, read_to_string, read_dir, remove_file, rename};
 use std::io::{BufWriter, BufRead, BufReader, Write};
+use std::net::{Shutdown, TcpStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -567,16 +568,22 @@ pub async fn download_libs(libraries_dir: &PathBuf) {
 
 // Download song from a unique URL
 pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
+	if let Ok(stream) = TcpStream::connect("8.8.4.4:53") {
+		stream.shutdown(Shutdown::Both).expect("Can't shutdown stream check !");
+	} else {
+		let _ = sender.send((0, 0, -98.0));
+		return;
+	}
 	if !fs::exists("libs").expect("Non authorized folder check !") {
 		let _ = fs::create_dir("libs");
 	}
 	let libraries_dir = PathBuf::from("libs");
 	if read_dir(&libraries_dir).expect("Can't iter over library folder !").next().is_none() {
-		let _ = sender.send((0, 0, -98.0));
+		let _ = sender.send((0, 0, -2.0));
 		let _ = download_libs(&libraries_dir).await;
 	}
 
-	let _ = sender.send((0, 0, -2.0));
+	let _ = sender.send((0, 0, -3.0));
 	let mut yt_dlp = PathBuf::new();
 	let mut ffmpeg = PathBuf::new();
 	for filename in read_dir(&libraries_dir).expect("Can't iter over library folder !") {
@@ -594,9 +601,18 @@ pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
 		return;
 	}
 
-    let output_dir = PathBuf::from("songs");
-	let filename = output_dir.join("%(id)s");
+	let mut existing_song = Vec::new();
+	for filename in read_dir(PathBuf::from("songs")).expect("Can't iter over songs folder !") {
+		let path = filename.expect("Can't retrieve file !").path();
+		let path_str = path.as_path().to_str().expect("Can't convert path to str !").to_owned();
+		let parsed_path = path_str.split("/").into_iter().last().expect("Can't retrieve last part of file path !").to_owned();
+		existing_song.push(parsed_path);
+	}
 
+    let output_dir = PathBuf::from("songs");
+	let mut downloaded_songs = Vec::new();
+
+	let filename = output_dir.join("%(id)s-tmp");
 	let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
 	let mut status = binding.args([
 		"--progress",
@@ -606,6 +622,7 @@ pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
 		"-x", 
 		"--audio-format", OUTPUT_FILE_FORMAT, 
 		"--add-metadata", 
+		"--print", "after_move:id=%(id)s", 
 		"--ffmpeg-location", ffmpeg.to_str().expect("Unable to convert to str"), 
 		"-o", filename.to_str().expect("Unable to convert to str"), 
 		&song_url, 
@@ -640,11 +657,36 @@ pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
 				.and_then(|m: &str| Some(m.parse::<f64>().expect("Can't convert &str to f64 !")))
 				.expect("Can't truncate correctly percent value !");
 		}
+		if line.contains("id=") {
+			downloaded_songs.push(line.split("=").into_iter().last().expect("Can't retrieve only the id of the downloaded song !").to_owned());
+		}
 
 		let _ = sender.send((index, total, percent));
     }
     let _ = status.wait().expect("Can't download song !");
-	let _ = sender.send((0, 0, -1.0));
+	let _ = sender.send((0, 0, -4.0));
+	
+	let mut is_already_downloaded = false;
+	for downloaded_song in downloaded_songs {
+		let parent_folder = PathBuf::from("songs");
+		let filename_normalized = downloaded_song.as_str().to_owned() + "-tmp." + OUTPUT_FILE_FORMAT;
+		let filename = downloaded_song.as_str().to_owned() + "." + OUTPUT_FILE_FORMAT;
+		if existing_song.contains(&filename) {
+			if is_already_downloaded == false { is_already_downloaded = true; };
+			let _ = remove_file(parent_folder.join(&filename_normalized));
+		} else {
+			let _ = rename(
+				parent_folder.join(&filename_normalized),
+				parent_folder.join(&filename)
+			);
+		}
+	}
+
+	if is_already_downloaded {
+		let _ = sender.send((0, 0, -51.0));
+	} else {
+		let _ = sender.send((0, 0, -1.0));
+	}
 }
 
 // Mofidying metadata of the song
@@ -675,7 +717,6 @@ pub fn modifying_metadata(filepath: String, new_song_datas: &Vec<(String, String
 
 // Normalize songs which required to normalize
 pub async fn normalize_songs(sender: Sender<(u32, u32, f64)>) {
-	let libraries_dir = PathBuf::from("libs");
 	let ffmpeg = get_ffmpeg_path();
 	let songs_dir = PathBuf::from("songs");
 
