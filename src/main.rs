@@ -7,6 +7,7 @@ mod tool;
 
 use music::{Loop, Player};
 use service::{Service, ServiceName, PlayingService, DownloadingService, PlaylistsService, SongsService};
+use dotenv::dotenv;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Alignment as TableAlignment, Constraint, Flex, Layout},
@@ -75,6 +76,7 @@ pub struct App {
 impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
+        dotenv().ok();
         self.playing_service.playing_infos = self.player.get_current_song_info();
         self.songs_service.set_all_songs(self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
         self.playlists_service.set_all_playlists(self.player.get_all_playlists());

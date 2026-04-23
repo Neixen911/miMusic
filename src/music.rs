@@ -5,6 +5,7 @@ use rand::thread_rng;
 use rodio::{Decoder, Sink, source::EmptyCallback};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::env;
 use std::fs::{self, File, read_to_string, read_dir, remove_file, rename};
 use std::io::{BufWriter, BufRead, BufReader, Write};
 use std::net::{Shutdown, TcpStream};
@@ -680,6 +681,19 @@ pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String) {
 				parent_folder.join(&filename_normalized),
 				parent_folder.join(&filename)
 			);
+		}
+
+		let dowloaded_songs_to_selected_playlist = env::var("DOWNLOADED_SONGS_TO_SELECTED_PLAYLIST")
+			.expect("The configuration value is not set !")
+			.parse::<bool>();
+		if dowloaded_songs_to_selected_playlist.is_ok() {
+			if dowloaded_songs_to_selected_playlist.ok().expect("Can't retrieve string to bool values !") {
+				println!("Song add to selected playlist !");
+			} else {
+				println!("Song not added to selected playlist !");
+			}
+		} else {
+			println!("The configuration value cannot be set to bool value !");
 		}
 	}
 

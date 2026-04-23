@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 archive = "0.3.0"
+dotenv = "0.15.0"
 futures-util = "0.3.31"
 id3 = "1.16.2"
 rand = "0.8"
