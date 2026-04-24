@@ -7,6 +7,7 @@ mod tool;
 
 use music::{Loop, Player};
 use service::{Service, ServiceName, PlayingService, DownloadingService, PlaylistsService, SongsService};
+use dotenv::dotenv;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Alignment as TableAlignment, Constraint, Flex, Layout},
@@ -75,9 +76,11 @@ pub struct App {
 impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
+        dotenv().ok();
+        music::load_settings(&mut self.player);
         self.playing_service.playing_infos = self.player.get_current_song_info();
-        self.songs_service.set_all_songs(self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
-        self.playlists_service.set_all_playlists(self.player.get_all_playlists());
+        self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
+        self.playlists_service.set_all_playlists(music::get_all_playlists());
 
         let (sender, mut receiver) = watch::channel((0, 0, 0.0));
 
@@ -162,10 +165,10 @@ impl App {
         }
         
         // Update all songs
-        self.songs_service.set_all_songs(self.player.get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
+        self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
 
         // Update all playlists
-        self.playlists_service.set_all_playlists(self.player.get_all_playlists());
+        self.playlists_service.set_all_playlists(music::get_all_playlists());
     }
 
     // Retrieve keys events
@@ -551,14 +554,14 @@ impl App {
 
     fn add_or_not_playlist(&mut self) {
         if self.is_answer_positive {
-            self.player.add_playlist();
+            music::add_playlist();
         }
         self.next_mode();
     }
 
     fn modify_playlist(&mut self) {
         let i = self.playlists_service.get_playlists_state();
-        self.player.modify_playlist(i, &self.input_modify_playlists);
+        music::modify_playlist(i, &self.input_modify_playlists);
         self.next_mode();
     }
 
@@ -594,7 +597,7 @@ impl App {
     fn remove_or_not_playlist(&mut self) {
         if self.is_answer_positive {
             let i = self.playlists_service.get_playlists_state();
-            self.player.remove_playlist(i);
+            music::remove_playlist(i);
         }
         self.next_mode();
     }
@@ -608,7 +611,7 @@ impl App {
             .playlist_name
             .to_string();
         if selected_playlist != "All songs".to_string() {
-            self.player.add_or_remove_song_to_playlist(song_to_add, selected_playlist);
+            music::add_or_remove_song_to_playlist(song_to_add, &selected_playlist);
         }
     }
 
@@ -618,7 +621,7 @@ impl App {
                 .get("path")
                 .expect("Can't retrieve path of the selected song !")
                 .to_string();
-            self.player.remove_song(song_to_remove);
+            music::remove_song(song_to_remove);
         }
         self.next_mode();
     }
@@ -641,7 +644,7 @@ impl App {
         if i.is_some() {
             let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")].get("path");
             let path = path.as_deref().expect("Unable to make the varibale as ownership !");
-            self.player.set_favorites(&path);
+            music::set_favorites(&path);
         }
     }
 
@@ -673,8 +676,9 @@ impl App {
 
     fn download_songs_from_url(&mut self, url: String, sender: Sender<(u32, u32, f64)>) {
         self.downloading_started = true;
+        let selected_playlist = self.playlists_service.get_active_playlist().to_owned();
         tokio::spawn( async move {
-            music::download_song(sender, url).await;
+            music::download_song(sender, url, &selected_playlist).await;
         });
     }
 
