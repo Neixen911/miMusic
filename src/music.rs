@@ -71,6 +71,7 @@ impl Player {
 	pub fn set_volume(&mut self, new_volume: f32) {
 		if new_volume <= 3.0 {
 			self.sink.set_volume(new_volume);
+			update_settings("Volume".to_string(), new_volume);
 		}
 	}
 
@@ -209,6 +210,53 @@ impl Player {
 	}
 }
 
+// Update a setting value in settings file
+pub fn update_settings(key: String, new_value: f32) {
+	let settings_content = read_to_string("settings.json").expect("Can't read content of settings.json file !");
+	let mut settings: Vec<(String, f32)> = serde_json::from_str(&settings_content)
+		.expect("Settings JSON content is not well-formatted !");
+	for (setting_key, setting_value) in &mut settings {
+		if key == *setting_key {
+			*setting_value = new_value;
+
+			let settings_file = File::create("settings.json").expect("Failed to create/open settings.json");
+			let mut settings_writer = BufWriter::new(settings_file);
+			let _ = serde_json::to_writer(&mut settings_writer, &settings);
+			let _ = settings_writer.flush();
+			break;
+		}
+	}
+}
+
+// Load all the settings from the settings file
+pub fn load_settings(player: &mut Player) {
+	if !fs::exists("settings.json").expect("Non authorized folder check !") {
+		let mut initialisation: Vec<(String, f32)> = Vec::new();
+		initialisation.push(
+			("Volume".to_string(), 1.0)
+		);
+
+		let settings_file = File::create("settings.json").expect("Failed to create/open settings.json");
+		let mut settings_writer = BufWriter::new(settings_file);
+		let _ = serde_json::to_writer(&mut settings_writer, &initialisation);
+		let _ = settings_writer.flush();
+	}
+	let settings_content = read_to_string("settings.json").expect("Can't read content of settings.json file !");
+	let settings: Vec<(String, f32)> = serde_json::from_str(&settings_content)
+		.expect("Settings JSON content is not well-formatted !");
+	for (key, value) in settings {
+		match key.as_str() {
+			"Volume" => {
+				player.set_volume(value);
+			}
+			&_ => {
+				println!("{}: {}", key, value);
+				continue;
+			}
+		}
+	}
+}
+
 // Return total duration of a song from a path (calcul from his frames and rate)
 pub fn get_audio_duration(path: &str) -> u32 {
 	let file = File::open(path).expect("Unable to open file !");
@@ -229,6 +277,32 @@ pub fn get_audio_duration(path: &str) -> u32 {
 	let duration_seconds = duration_in_frames as f64 / sample_rate as f64;
 
 	duration_seconds as u32
+}
+
+// Mofidying metadata of the song
+pub fn modifying_metadata(filepath: String, new_song_datas: &Vec<(String, String)>) {
+	let file = File::open(&filepath).expect("Unable to open file !");
+	let mut tag = Tag::read_from2(&file).expect("Unable to get tags from file !");
+
+	for (name, content) in new_song_datas {
+		match name.as_str() {
+			"TIT2" => {
+				tag.set_title(content.to_string());
+			}
+			"TPE1" => {
+				tag.set_artist(content.to_string());
+			}
+			"TNOB" => {
+				tag.add_frame(Id3Frame::text("TNOB", content.to_string()));
+			}
+			&_ => {
+				println!("{}, {}", name, content);
+				continue;
+			}
+		}
+	}
+
+	tag.write_to_path(&filepath, Version::Id3v24).expect("Can't write metadata to the file");
 }
 
 // Return infos from song file
@@ -698,32 +772,6 @@ pub async fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String, se
 	} else {
 		let _ = sender.send((0, 0, -1.0));
 	}
-}
-
-// Mofidying metadata of the song
-pub fn modifying_metadata(filepath: String, new_song_datas: &Vec<(String, String)>) {
-	let file = File::open(&filepath).expect("Unable to open file !");
-	let mut tag = Tag::read_from2(&file).expect("Unable to get tags from file !");
-
-	for (name, content) in new_song_datas {
-		match name.as_str() {
-			"TIT2" => {
-				tag.set_title(content.to_string());
-			}
-			"TPE1" => {
-				tag.set_artist(content.to_string());
-			}
-			"TNOB" => {
-				tag.add_frame(Id3Frame::text("TNOB", content.to_string()));
-			}
-			&_ => {
-				println!("{}, {}", name, content);
-				continue;
-			}
-		}
-	}
-
-	tag.write_to_path(&filepath, Version::Id3v24).expect("Can't write metadata to the file");
 }
 
 // Normalize songs which required to normalize

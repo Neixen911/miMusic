@@ -77,6 +77,7 @@ impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
         dotenv().ok();
+        music::load_settings(&mut self.player);
         self.playing_service.playing_infos = self.player.get_current_song_info();
         self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
         self.playlists_service.set_all_playlists(music::get_all_playlists());
