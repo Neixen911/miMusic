@@ -19,24 +19,30 @@ pub struct SongsService {
 impl SongsService {
     // Select previous song in songs table
     pub fn previous(&mut self) {
-        let mut selected_song_id = self.get_songs_state().expect("Can't retrieve active song id !");
-        if selected_song_id == 0 {
-            selected_song_id = self.get_all_songs().len() - 1;
-        } else {
-            selected_song_id -= 1;
+        let selected_song_id_state = self.get_songs_state();
+        if selected_song_id_state.is_some() {
+            let mut selected_song_id = selected_song_id_state.expect("Can't retrieve active song id !");
+            if selected_song_id == 0 {
+                selected_song_id = self.get_all_songs().len() - 1;
+            } else {
+                selected_song_id -= 1;
+            }
+            self.set_songs_state(Some(selected_song_id));
         }
-        self.set_songs_state(Some(selected_song_id));
     }
 
     // Select next song in songs table
     pub fn next(&mut self) {
-        let mut selected_song_id = self.get_songs_state().expect("Can't retrieve active song id !");
-        if selected_song_id >= self.get_all_songs().len() - 1 {
-            selected_song_id = 0;
-        } else {
-            selected_song_id += 1;
+        let selected_song_id_state = self.get_songs_state();
+        if selected_song_id_state.is_some() {
+            let mut selected_song_id = selected_song_id_state.expect("Can't retrieve active song id !");
+            if selected_song_id >= self.get_all_songs().len() - 1 {
+                selected_song_id = 0;
+            } else {
+                selected_song_id += 1;
+            }
+            self.set_songs_state(Some(selected_song_id));
         }
-        self.set_songs_state(Some(selected_song_id));
     }
 
     // Convert seconds to minutes/seconds
