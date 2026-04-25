@@ -5,6 +5,7 @@ mod music;
 mod service;
 mod tool;
 
+use crate::tool::InputTool;
 use music::{Loop, Player};
 use service::{Service, ServiceName, PlayingService, DownloadingService, PlaylistsService, SongsService};
 use dotenv::dotenv;
@@ -41,7 +42,7 @@ async fn main() -> io::Result<()> {
         songs_service: SongsService::new(ServiceName::SONGS),
         mode: "songs".to_string(),
         input_song_datas: Vec::new(),
-        input_modify_playlists: "".to_string(),
+        input_modify_playlists: InputTool::new("".to_string()),
         downloading_started: false,
         normalization_started: false,
         loop_value: Loop::None,
@@ -65,7 +66,7 @@ pub struct App {
     songs_service: SongsService,
     mode: String,
     input_song_datas: Vec<(String, String)>,
-    input_modify_playlists: String,
+    input_modify_playlists: InputTool,
     downloading_started: bool,
     normalization_started: bool,
     loop_value: Loop,
@@ -253,9 +254,12 @@ impl App {
             }
             "modify_popup_playlists" => {
                 match key_event.code {
+                    KeyCode::Left                   => { self.input_modify_playlists.left_input_position(); },
+                    KeyCode::Right                  => { self.input_modify_playlists.right_input_position(); },
                     KeyCode::Enter                  => { self.modify_playlist(); },
-                    KeyCode::Backspace              => { self.remove_char_from_input(); },
-                    KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
+                    KeyCode::Backspace              => { self.input_modify_playlists.remove_previous_char_from_input(); },
+                    KeyCode::Delete                 => { self.input_modify_playlists.remove_next_char_from_input(); },
+                    KeyCode::Char(to_insert)        => { self.input_modify_playlists.add_char_to_input(to_insert); },
                     KeyCode::Esc                    => { self.next_mode(); }
                     _ => {}
                 }
@@ -509,7 +513,7 @@ impl App {
             }
             "modify_playlist" => {
                 if *selected_playlist != "All songs".to_string() && *selected_playlist != "Favorites".to_string() {
-                    self.input_modify_playlists = selected_playlist.to_string();
+                    self.input_modify_playlists.set_input(selected_playlist.to_string());
                     self.mode = "modify_popup_playlists".to_string();
                 }
             }
@@ -561,7 +565,7 @@ impl App {
 
     fn modify_playlist(&mut self) {
         let i = self.playlists_service.get_playlists_state();
-        music::modify_playlist(i, &self.input_modify_playlists);
+        music::modify_playlist(i, &self.input_modify_playlists.get_input());
         self.next_mode();
     }
 
@@ -650,9 +654,6 @@ impl App {
 
     fn remove_char_from_input(&mut self) {
         match self.mode.as_str() {
-            "modify_popup_playlists" => {
-                self.input_modify_playlists.pop();
-            }
             "modify_popup_songs" => {
                 self.input_song_datas[self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !")].1.pop();
             }
@@ -662,11 +663,6 @@ impl App {
 
     fn insert_char_into_input(&mut self, new_char: char) {
         match self.mode.as_str() {
-            "modify_popup_playlists" => {
-                if self.input_modify_playlists.len() < 20 {
-                    self.input_modify_playlists.push_str(&new_char.to_string());
-                }
-            }
             "modify_popup_songs" => {
                 self.input_song_datas[self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !")].1.push_str(&new_char.to_string());
             }
@@ -861,7 +857,8 @@ impl App {
                         .style(Style::default().bg(popup_negative_answer_style)), answers[1]);
                 }
                 "input" => {
-                    let popup_input_answer = Line::from(self.input_modify_playlists.as_str()).alignment(Alignment::Center);
+                    let input_modify_playlists_value = self.input_modify_playlists.get_input();
+                    let popup_input_answer = Line::from(input_modify_playlists_value.as_str()).alignment(Alignment::Center);
                     frame.render_widget(Paragraph::new(popup_input_answer)
                         .style(Style::default().bg(Color::Magenta).fg(Color::White)), chunks[1]);
                 }
