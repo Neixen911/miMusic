@@ -21,11 +21,11 @@ fn get_constraint(answer_type: AnswerType) -> Constraint {
 pub struct PopupTool {
     pub question: String,
     pub answers_type: AnswerType,
-    pub answers_value: Vec<>
+    pub answers_value: Vec<T>
 }
 
 impl PopupTool {
-    pub fn new(question: String, answers_type: AnswerType, answers_value: Vec<>) -> Self {
+    pub fn new(question: String, answers_type: AnswerType, answers_value: Vec<T>) -> Self {
         PopupTool {
             question: question,
             answers_type: answers_type,
