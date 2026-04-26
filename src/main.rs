@@ -46,6 +46,13 @@ async fn main() -> io::Result<()> {
         downloading_service: DownloadingService::new(ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT)),
         playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT)),
         songs_service: SongsService::new(ServiceName::SONGS(SongsInterface::DEFAULT)),
+            Sink::connect_new(stream_handle.mixer())
+        ),
+        active_service: ServiceName::SONGS(SongsInterface::DEFAULT),
+        playing_service: PlayingService::new(ServiceName::PLAYING(PlayingInterface::DEFAULT)),
+        downloading_service: DownloadingService::new(ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT)),
+        playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT)),
+        songs_service: SongsService::new(ServiceName::SONGS(SongsInterface::DEFAULT)),
         mode: "songs".to_string(),
         input_song_datas: Vec::new(),
         input_modify_playlists: InputTool::new("".to_string()),
@@ -462,27 +469,41 @@ impl App {
                 self.active_service = ServiceName::PLAYING(PlayingInterface::DEFAULT);
             }
             "playing" => {
+                next_mode = "playing";
+                self.active_service = ServiceName::PLAYING(PlayingInterface::DEFAULT);
+            }
+            "playing" => {
                 next_mode = "download";
+                self.active_service = ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT);
                 self.active_service = ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT);
             }
             "download" => {
                 next_mode = "playlists";
                 self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
             }
             "playlists" => {
                 next_mode = "songs";
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
                 self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             "add_popup_playlists" => {
                 next_mode = "playlists";
                 self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
             }
             "modify_popup_playlists" => {
                 next_mode = "playlists";
                 self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
             }
             "remove_popup_playlists" => {
                 next_mode = "playlists";
+                self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
+            }
+            "modify_popup_songs" => {
+                next_mode = "songs";
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
                 self.active_service = ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT);
             }
             "modify_popup_songs" => {
