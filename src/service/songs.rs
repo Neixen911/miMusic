@@ -13,7 +13,7 @@ use std::collections::HashMap;
 pub struct SongsService {
     service_name: ServiceName,
     all_songs: Vec<HashMap<String, String>>,
-    songs_state: TableState
+    songs_state: TableState,
 }
 
 impl SongsService {
@@ -67,6 +67,16 @@ impl SongsService {
 
     pub fn get_songs_state(&self) -> Option<usize> {
         self.songs_state.selected()
+    }
+
+    pub fn get_selected_song(&self) -> Option<HashMap<String, String>> {
+        let mut result = None;
+        let songs_state = self.get_songs_state();
+        if songs_state.is_some() {
+            result = Some(self.get_all_songs()[songs_state.expect("Can't be a None value !")].clone());
+        }
+
+        result
     }
 
 	pub fn get_modify_song_infos(&mut self) -> Vec<(String, String)> {

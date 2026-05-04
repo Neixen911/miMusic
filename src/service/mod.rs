@@ -38,6 +38,26 @@ pub enum PlaylistsInterface {
     DELETE
 }
 
+pub struct Registry {
+    services: Vec<Arc<dyn Service>>,
+}
+
+impl Registry {
+    fn new() -> Self {
+        Registry {
+            services: Vec::new(),
+        }
+    }
+
+    fn add_service(&mut self, service: dyn Service) {
+        self.services.push(service);
+    }
+
+    fn get_service(&self, service_name: impl ServiceName) -> impl Service {
+        self.services.retain(|&service| service.is::<service_name>())
+    }
+}
+
 pub trait Service {
     fn new(service_name: ServiceName) -> Self
     where

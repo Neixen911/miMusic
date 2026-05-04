@@ -462,8 +462,8 @@ impl App {
                 self.active_service = ServiceName::PLAYING(PlayingInterface::DEFAULT);
             }
             "playing" => {
-                next_mode = "playing";
-                self.active_service = ServiceName::PLAYING(PlayingInterface::DEFAULT);
+                next_mode = "download";
+                self.active_service = ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT);
             }
             "download" => {
                 next_mode = "playlists";
@@ -487,15 +487,15 @@ impl App {
             }
             "modify_popup_songs" => {
                 next_mode = "songs";
-                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
+                self.active_service = ServiceName::SONGS(SongsInterface::MODIFY);
             }
             "add_popup_songs" => {
                 next_mode = "songs";
-                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
+                self.active_service = ServiceName::SONGS(SongsInterface::ADD);
             }
             "remove_popup_songs" => {
                 next_mode = "songs";
-                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
+                self.active_service = ServiceName::SONGS(SongsInterface::DELETE);
             }
             "normalize_popup_songs" => {
                 next_mode = "songs";
