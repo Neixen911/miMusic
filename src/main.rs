@@ -8,6 +8,7 @@ mod tool;
 use crate::tool::InputTool;
 use music::{Loop, Player};
 use service::{
+    Registry,
     Service, ServiceName,
     PlayingService, PlayingInterface,
     DownloadingService, DownloadingInterface,
@@ -26,6 +27,7 @@ use ratatui::{
 };
 use rodio::{OutputStreamBuilder, Sink};
 use std::io;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio;
 use tokio::sync::watch::{self, Receiver, Sender};
@@ -42,6 +44,7 @@ async fn main() -> io::Result<()> {
             Sink::connect_new(stream_handle.mixer())
         ),
         active_service: ServiceName::SONGS(SongsInterface::DEFAULT),
+        registry: Registry::new(),
         playing_service: PlayingService::new(ServiceName::PLAYING(PlayingInterface::DEFAULT)),
         downloading_service: DownloadingService::new(ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT)),
         playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT)),
@@ -66,6 +69,7 @@ pub struct App {
     song_infos_state: TableState,
     player: Player,
     active_service: ServiceName,
+    registry: Registry,
     playing_service: PlayingService,
     downloading_service: DownloadingService,
     playlists_service: PlaylistsService,
@@ -85,6 +89,10 @@ impl App {
         self.is_running = true;
         dotenv().ok();
         music::load_settings(&mut self.player);
+        self.registry.add_service(Arc::new(PlayingService::new(ServiceName::PLAYING(PlayingInterface::DEFAULT))));
+        self.registry.add_service(Arc::new(DownloadingService::new(ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT))));
+        self.registry.add_service(Arc::new(PlaylistsService::new(ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT))));
+        self.registry.add_service(Arc::new(SongsService::new(ServiceName::SONGS(SongsInterface::DEFAULT))));
         self.playing_service.playing_infos = self.player.get_current_song_info();
         self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
         self.playlists_service.set_all_playlists(music::get_all_playlists());
@@ -708,10 +716,10 @@ impl App {
         frame.render_widget(app_text, app);
         
         // Playing section
-        self.playing_service.render(frame, playing, &self.active_service);
+        self.playing_service.render(frame, playing, &self.active_service, &self.registry);
 
         // Downloading section
-        self.downloading_service.render(frame, download, &self.active_service);
+        self.downloading_service.render(frame, download, &self.active_service, &self.registry);
 
         // Playlists & Songs section
         let horizontal = Layout::horizontal([
@@ -720,8 +728,8 @@ impl App {
         ]);
         let [playlists, songs] = horizontal.areas(playlists_songs);
 
-        self.playlists_service.render(frame, playlists, &self.active_service);
-        self.songs_service.render(frame, songs, &self.active_service);
+        self.playlists_service.render(frame, playlists, &self.active_service, &self.registry);
+        self.songs_service.render(frame, songs, &self.active_service, &self.registry);
 
         // Hotkeys section
         let hotkeys_text: &str;

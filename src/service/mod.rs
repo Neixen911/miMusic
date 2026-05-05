@@ -2,6 +2,7 @@ use ratatui::{
     layout::Rect,
     Frame
 };
+use std::sync::Arc;
 
 #[derive(PartialEq)]
 pub enum ServiceName {
@@ -43,18 +44,25 @@ pub struct Registry {
 }
 
 impl Registry {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Registry {
             services: Vec::new(),
         }
     }
 
-    fn add_service(&mut self, service: dyn Service) {
+    pub fn add_service(&mut self, service: Arc<dyn Service>) {
         self.services.push(service);
     }
 
-    fn get_service(&self, service_name: impl ServiceName) -> impl Service {
-        self.services.retain(|&service| service.is::<service_name>())
+    pub fn get_service(&self, service_name: ServiceName) -> Option<Arc<dyn Service>> {
+        let mut asked_service = self.services.clone();
+        asked_service.retain(|service| service_name == *service.get_name());
+        let mut result = None;
+        if !asked_service.is_empty() {
+            result = Some(asked_service[0].clone())
+        }
+
+        result
     }
 }
 
@@ -63,7 +71,7 @@ pub trait Service {
     where
         Self: Sized;
     fn get_name(&self) -> &ServiceName;
-    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName)
+    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName, registry: &Registry)
     where
         Self: Sized;
 }

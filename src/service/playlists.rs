@@ -1,4 +1,4 @@
-use super::{Service, ServiceName};
+use super::{Registry, Service, ServiceName};
 use super::super::music::Playlist;
 
 use ratatui::{
@@ -78,7 +78,7 @@ impl Service for PlaylistsService {
         &self.service_name
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName, _registry: &Registry) {
         let mut playlists_datas: Vec<Row> = Vec::new();
         for playlist in &self.all_playlists {
             playlists_datas.push(Row::new(vec![

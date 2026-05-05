@@ -1,4 +1,4 @@
-use super::{Service, ServiceName};
+use super::{Registry, Service, ServiceName};
 use crate::tool::InputTool;
 
 use ratatui::{
@@ -42,7 +42,7 @@ impl Service for DownloadingService {
         &self.service_name
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName, _registry: &Registry) {
         let chunks = Layout::vertical([
             Constraint::Length(3),
         ])

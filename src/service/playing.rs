@@ -1,4 +1,4 @@
-use super::{Service, ServiceName};
+use super::{Registry, Service, ServiceName};
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -35,7 +35,7 @@ impl Service for PlayingService {
         &self.service_name
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName, _registry: &Registry) {
         let chunks = Layout::vertical([
             Constraint::Length(4),              // Playing informations
             Constraint::Length(1),              // Duration gauge
