@@ -3,7 +3,7 @@ use ratatui::{
     prelude::{Alignment},
     style::{Color, Style},
     text::Line,
-    widgets::{Block, Clear, Paragraph, Table, Wrap},
+    widgets::{Block, Clear, Paragraph, Row, Table, Wrap},
     Frame
 };
 
@@ -15,15 +15,14 @@ pub enum Answer {
 }
 
 impl IntoIterator for Answer {
-    type Item = String;
-    type IntoIter = std::vec::IntoIter<String>;
+    type Item = (String, String);
+    type IntoIter = std::vec::IntoIter<(String, String)>;
 
     fn into_iter(self) -> Self::IntoIter {
         match self {
-            Answer::BINARY(x, y) => vec![x, y].into_iter(),
-            Answer::INPUT(x) => vec![x].into_iter(),
-            Answer::TABLE(x) => x.into_iter(),
-            Answer::TABLEINPUTS(x) => x.into_iter(),
+            Answer::TABLE(x)            => x.into_iter(),
+            Answer::TABLEINPUTS(x)      => x.into_iter(),
+            _                           => vec![].into_iter(),
         }
     }
 }
@@ -74,8 +73,13 @@ impl PopupTool {
 
         let popup_question = Line::from(self.question).alignment(Alignment::Center);
         frame.render_widget(Paragraph::new(popup_question).wrap(Wrap { trim: true }), chunks[0]);
+
+        let answers = Vec::new();
+        for answer in self.answers {
+            answers.push(Row::new(answer));
+        }
         let popup_answers = Table::new(
-            self.answers,
+            answers,
             [
                 Constraint::Length(3),              // Selection box
                 Constraint::Fill(1),                // Playlist name
