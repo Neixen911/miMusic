@@ -7,6 +7,7 @@ use ratatui::{
     widgets::{Block, Gauge, Paragraph},
     Frame
 };
+use std::any::Any;
 
 pub struct PlayingService {
     pub service_name: ServiceName,
@@ -30,6 +31,8 @@ impl Service for PlayingService {
             playing_infos: Vec::new(),
         }
     }
+
+    fn as_any(&mut self) -> &mut dyn Any { self }
 
     fn get_name(&self) -> &ServiceName {
         &self.service_name

@@ -1,4 +1,4 @@
-use super::{Registry, Service, ServiceName, SongsInterface, PlaylistsInterface};
+use super::{Registry, Service, ServiceName, SongsInterface, PlaylistsService};
 use crate::tool::popup::{PopupTool, Answer};
 
 use ratatui::{
@@ -9,6 +9,7 @@ use ratatui::{
     widgets::{Block, Cell, Row, Table, TableState},
     Frame
 };
+use std::any::Any;
 use std::collections::HashMap;
 
 pub struct SongsService {
@@ -115,6 +116,8 @@ impl Service for SongsService {
         }
     }
 
+    fn as_any(&mut self) -> &mut dyn Any { self }
+
     fn get_name(&self) -> &ServiceName {
         &self.service_name
     }
@@ -159,31 +162,34 @@ impl Service for SongsService {
         // Popups gestion
         match active_service {
             ServiceName::SONGS(SongsInterface::ADD) => {
-                let playlist_service = registry.get_service(ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT));
-                let selected_song_result = self.get_selected_song();
-                if selected_song_result.is_some() {
-                    let selected_song = selected_song_result.expect("Can't retrieve selected song !");
-                    let popup_question = format!(
-                        "In which playlist(s) do you want to add '{}' song ?",
-                        selected_song.get("title").expect("Can't have an empty title name song !")
-                    );
-                    let mut playlists_datas: Vec<(String, String)> = Vec::new();
-                    for playlist in playlist_service.get_all_playlists() {
-                        let is_in_playlist = playlist.songs_list.contains(selected_song.get("path").expect("Can't retrieve path of song file !"));
-                        let checkbox: &str;
-                        if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
-                            checkbox = "[X]";
-                        } else { checkbox = "[ ]"; }
-                        playlists_datas.push((
-                            checkbox.to_string(),
-                            &playlist.playlist_name
-                        ));
+                if let Some(playlist_service_result) = registry.get_service::<PlaylistsService>() {
+                    let mut playlist_service_global = playlist_service_result.lock().unwrap();
+                    let playlist_service = playlist_service_global.as_any().downcast_mut::<PlaylistsService>().unwrap();
+                    let selected_song_result = self.get_selected_song();
+                    if selected_song_result.is_some() {
+                        let selected_song = selected_song_result.expect("Can't retrieve selected song !");
+                        let popup_question = format!(
+                            "In which playlist(s) do you want to add '{}' song ?",
+                            selected_song.get("title").expect("Can't have an empty title name song !")
+                        );
+                        let mut playlists_datas: Vec<(String, String)> = Vec::new();
+                        for playlist in playlist_service.get_all_playlists() {
+                            let is_in_playlist = playlist.songs_list.contains(selected_song.get("path").expect("Can't retrieve path of song file !"));
+                            let checkbox: &str;
+                            if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
+                                checkbox = "[X]";
+                            } else { checkbox = "[ ]"; }
+                            playlists_datas.push((
+                                checkbox.to_string(),
+                                playlist.playlist_name.clone()
+                            ));
+                        }
+                        let mut popup = PopupTool::new(
+                            popup_question,
+                            Answer::TABLE(playlists_datas)
+                        );
+                        popup.render(frame);
                     }
-                    let popup = PopupTool::new(
-                        popup_question,
-                        Answer::TABLE(playlists_datas)
-                    );
-                    popup.render(frame);
                 }
             },
             ServiceName::SONGS(SongsInterface::MODIFY) => {

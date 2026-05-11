@@ -27,7 +27,6 @@ use ratatui::{
 };
 use rodio::{OutputStreamBuilder, Sink};
 use std::io;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio;
 use tokio::sync::watch::{self, Receiver, Sender};
@@ -89,13 +88,19 @@ impl App {
         self.is_running = true;
         dotenv().ok();
         music::load_settings(&mut self.player);
-        self.registry.add_service(Arc::new(PlayingService::new(ServiceName::PLAYING(PlayingInterface::DEFAULT))));
-        self.registry.add_service(Arc::new(DownloadingService::new(ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT))));
-        self.registry.add_service(Arc::new(PlaylistsService::new(ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT))));
-        self.registry.add_service(Arc::new(SongsService::new(ServiceName::SONGS(SongsInterface::DEFAULT))));
+        self.registry.add_service(PlayingService::new(ServiceName::PLAYING(PlayingInterface::DEFAULT)));
+        self.registry.add_service(DownloadingService::new(ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT)));
+        self.registry.add_service(PlaylistsService::new(ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT)));
+        self.registry.add_service(SongsService::new(ServiceName::SONGS(SongsInterface::DEFAULT)));
         self.playing_service.playing_infos = self.player.get_current_song_info();
         self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
         self.playlists_service.set_all_playlists(music::get_all_playlists());
+
+        // if let Some(playlist_service_result) = self.registry.get_service::<PlaylistsService>() {
+        //     let mut playlist_service_global = playlist_service_result.lock().unwrap();
+        //     let playlist_service = playlist_service_global.as_any().downcast_mut::<PlaylistsService>().unwrap();
+        //     playlist_service.set_all_playlists(music::get_all_playlists());
+        // }
 
         let (sender, mut receiver) = watch::channel((0, 0, 0.0));
 
@@ -495,15 +500,15 @@ impl App {
             }
             "modify_popup_songs" => {
                 next_mode = "songs";
-                self.active_service = ServiceName::SONGS(SongsInterface::MODIFY);
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             "add_popup_songs" => {
                 next_mode = "songs";
-                self.active_service = ServiceName::SONGS(SongsInterface::ADD);
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             "remove_popup_songs" => {
                 next_mode = "songs";
-                self.active_service = ServiceName::SONGS(SongsInterface::DELETE);
+                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             "normalize_popup_songs" => {
                 next_mode = "songs";
@@ -559,6 +564,7 @@ impl App {
             }
             "add_song" => {
                 self.mode = "add_popup_songs".to_string();
+                self.active_service = ServiceName::SONGS(SongsInterface::ADD);
             }
             "remove_song" => {
                 self.mode = "remove_popup_songs".to_string();
@@ -776,148 +782,148 @@ impl App {
         frame.render_widget(hotkeys_section, hotkeys);
 
         // Playlists AND Songs popup (Create/Modify/Delete AND Add)
-        if self.mode.as_str().contains("popup") {
-            let popup_question: String;
-            let answers_type: &str;
-            let answer_height: Constraint;
+        // if self.mode.as_str().contains("popup") {
+        //     let popup_question: String;
+        //     let answers_type: &str;
+        //     let answer_height: Constraint;
 
-            match self.mode.as_str() {
-                "add_popup_playlists" => {
-                    popup_question = format!("Do you want to add a new playlist ?");
-                    answers_type = "binary";
-                    answer_height = Constraint::Max(1);
-                }
-                "modify_popup_playlists" => {
-                    popup_question = format!("What's the new name of the selected playlist ?");
-                    answers_type = "input";
-                    answer_height = Constraint::Max(1);
-                }
-                "remove_popup_playlists" => {
-                    popup_question = format!("Do you really want to delete '{}' playlist ?", self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name);
-                    answers_type = "binary";
-                    answer_height = Constraint::Max(1);
-                }
-                "modify_popup_songs" => {
-                    popup_question = format!("What is the new informations of this song ?");
-                    answers_type = "inputs_table";
-                    answer_height = Constraint::Max(2);
-                }
-                "add_popup_songs" => {
-                    popup_question = format!("In which playlist(s) do you want to add '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
-                    answers_type = "table";
-                    answer_height = Constraint::Max(3);
-                }
-                "remove_popup_songs" => {
-                    popup_question = format!("Do you really want to delete '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
-                    answers_type = "binary";
-                    answer_height = Constraint::Max(1);
-                }
-                "normalize_popup_songs" => {
-                    popup_question = format!("Do you want to launch normalizations songs process ?");
-                    answers_type = "binary";
-                    answer_height = Constraint::Max(1);
-                }
-                &_ => {
-                    // Delete a random song (1/1000 chance)
-                    popup_question = format!("Bro, no question here. Just you and me. Choose and good luck !");
-                    answers_type = "binary";
-                    answer_height = Constraint::Max(1);
-                }
-            }
-            let popup = frame.area();
+        //     match self.mode.as_str() {
+        //         "add_popup_playlists" => {
+        //             popup_question = format!("Do you want to add a new playlist ?");
+        //             answers_type = "binary";
+        //             answer_height = Constraint::Max(1);
+        //         }
+        //         "modify_popup_playlists" => {
+        //             popup_question = format!("What's the new name of the selected playlist ?");
+        //             answers_type = "input";
+        //             answer_height = Constraint::Max(1);
+        //         }
+        //         "remove_popup_playlists" => {
+        //             popup_question = format!("Do you really want to delete '{}' playlist ?", self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name);
+        //             answers_type = "binary";
+        //             answer_height = Constraint::Max(1);
+        //         }
+        //         "modify_popup_songs" => {
+        //             popup_question = format!("What is the new informations of this song ?");
+        //             answers_type = "inputs_table";
+        //             answer_height = Constraint::Max(2);
+        //         }
+        //         "add_popup_songs" => {
+        //             popup_question = format!("In which playlist(s) do you want to add '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
+        //             answers_type = "table";
+        //             answer_height = Constraint::Max(3);
+        //         }
+        //         "remove_popup_songs" => {
+        //             popup_question = format!("Do you really want to delete '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
+        //             answers_type = "binary";
+        //             answer_height = Constraint::Max(1);
+        //         }
+        //         "normalize_popup_songs" => {
+        //             popup_question = format!("Do you want to launch normalizations songs process ?");
+        //             answers_type = "binary";
+        //             answer_height = Constraint::Max(1);
+        //         }
+        //         &_ => {
+        //             // Delete a random song (1/1000 chance)
+        //             popup_question = format!("Bro, no question here. Just you and me. Choose and good luck !");
+        //             answers_type = "binary";
+        //             answer_height = Constraint::Max(1);
+        //         }
+        //     }
+        //     let popup = frame.area();
 
-            let vertical = Layout::vertical([Constraint::Length(12)]).flex(Flex::Center);
-            let horizontal = Layout::horizontal([Constraint::Length(50)]).flex(Flex::Center);
-            let [popup] = vertical.areas(popup);
-            let [popup] = horizontal.areas(popup);
+        //     let vertical = Layout::vertical([Constraint::Length(12)]).flex(Flex::Center);
+        //     let horizontal = Layout::horizontal([Constraint::Length(50)]).flex(Flex::Center);
+        //     let [popup] = vertical.areas(popup);
+        //     let [popup] = horizontal.areas(popup);
 
-            let chunks = Layout::vertical([
-                Constraint::Max(2),                 // Question's popup
-                answer_height,                      // Binary answers OR Input text answer OR Selection table
-            ])
-            .vertical_margin(3)
-            .horizontal_margin(8)
-            .flex(Flex::SpaceBetween)
-            .split(popup);
+        //     let chunks = Layout::vertical([
+        //         Constraint::Max(2),                 // Question's popup
+        //         answer_height,                      // Binary answers OR Input text answer OR Selection table
+        //     ])
+        //     .vertical_margin(3)
+        //     .horizontal_margin(8)
+        //     .flex(Flex::SpaceBetween)
+        //     .split(popup);
 
-            frame.render_widget(Clear, popup);
+        //     frame.render_widget(Clear, popup);
 
-            let popup_block = Block::bordered();
-            frame.render_widget(popup_block, popup);
+        //     let popup_block = Block::bordered();
+        //     frame.render_widget(popup_block, popup);
 
-            let popup_question = Line::from(popup_question).alignment(Alignment::Center);
-            frame.render_widget(Paragraph::new(popup_question).wrap(Wrap { trim: true }), chunks[0]);
+        //     let popup_question = Line::from(popup_question).alignment(Alignment::Center);
+        //     frame.render_widget(Paragraph::new(popup_question).wrap(Wrap { trim: true }), chunks[0]);
 
-            match answers_type {
-                "binary" => {
-                    let positive_answer = "Yes";
-                    let negative_answer = "No";
+        //     match answers_type {
+        //         "binary" => {
+        //             let positive_answer = "Yes";
+        //             let negative_answer = "No";
 
-                    let answers = Layout::horizontal([
-                        Constraint::Length(3 + 4),
-                        Constraint::Length(2 + 4),
-                    ])
-                    .flex(Flex::SpaceBetween)
-                    .split(chunks[1]);
+        //             let answers = Layout::horizontal([
+        //                 Constraint::Length(3 + 4),
+        //                 Constraint::Length(2 + 4),
+        //             ])
+        //             .flex(Flex::SpaceBetween)
+        //             .split(chunks[1]);
 
-                    let popup_positive_answer = Line::from(positive_answer).alignment(Alignment::Center);
-                    let popup_negative_answer = Line::from(negative_answer).alignment(Alignment::Center);
-                    let popup_positive_answer_style = if self.is_answer_positive {Color::Magenta} else {Color::Reset};
-                    let popup_negative_answer_style = if !self.is_answer_positive {Color::Magenta} else {Color::Reset};
+        //             let popup_positive_answer = Line::from(positive_answer).alignment(Alignment::Center);
+        //             let popup_negative_answer = Line::from(negative_answer).alignment(Alignment::Center);
+        //             let popup_positive_answer_style = if self.is_answer_positive {Color::Magenta} else {Color::Reset};
+        //             let popup_negative_answer_style = if !self.is_answer_positive {Color::Magenta} else {Color::Reset};
 
-                    frame.render_widget(Paragraph::new(popup_positive_answer)
-                        .style(Style::default().bg(popup_positive_answer_style)), answers[0]);
-                    frame.render_widget(Paragraph::new(popup_negative_answer)
-                        .style(Style::default().bg(popup_negative_answer_style)), answers[1]);
-                }
-                "input" => {
-                    let input_modify_playlists_value = self.input_modify_playlists.get_input();
-                    let popup_input_answer = Line::from(input_modify_playlists_value.as_str()).alignment(Alignment::Center);
-                    frame.render_widget(Paragraph::new(popup_input_answer)
-                        .style(Style::default().bg(Color::Magenta).fg(Color::White)), chunks[1]);
-                }
-                "table" => {
-                    let mut playlists_datas: Vec<Row> = Vec::new();
-                    for playlist in self.playlists_service.get_all_playlists() {
-                        let is_in_playlist = playlist.songs_list.contains(self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("path").expect("Can't retrieve path of song file !"));
-                        let checkbox: &str;
-                        if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
-                            checkbox = "[X]";
-                        } else { checkbox = "[ ]"; }
-                        playlists_datas.push(Row::new(vec![
-                            checkbox,
-                            &playlist.playlist_name
-                        ]));
-                    }
-                    let selection_table = Table::new(
-                        playlists_datas,
-                        [
-                            Constraint::Length(3),              // Selection box
-                            Constraint::Fill(1),                // Playlist name
-                        ])
-                        .row_highlight_style(Style::default().bg(Color::Magenta).fg(Color::White));
-                    frame.render_stateful_widget(selection_table, chunks[1], &mut self.song_to_playlists_state);
-                }
-                "inputs_table" => {
-                    let mut song_datas: Vec<Row> = Vec::new();
-                    for (name, content) in &self.input_song_datas {
-                        song_datas.push(Row::new(vec![
-                            Cell::from(format!("{}:", name)), 
-                            Cell::from(Text::from(content.to_string()).alignment(TableAlignment::Right))
-                        ]))
-                    }
-                    let modify_table = Table::new(
-                        song_datas,
-                        [
-                            Constraint::Length(8),              // Entitled name
-                            Constraint::Fill(1),                // Entitled's content
-                        ])
-                        .row_highlight_style(Style::default().bg(Color::Magenta).fg(Color::White));
-                    frame.render_stateful_widget(modify_table, chunks[1], &mut self.song_infos_state);
-                }
-                &_ => {}
-            }
-        }
+        //             frame.render_widget(Paragraph::new(popup_positive_answer)
+        //                 .style(Style::default().bg(popup_positive_answer_style)), answers[0]);
+        //             frame.render_widget(Paragraph::new(popup_negative_answer)
+        //                 .style(Style::default().bg(popup_negative_answer_style)), answers[1]);
+        //         }
+        //         "input" => {
+        //             let input_modify_playlists_value = self.input_modify_playlists.get_input();
+        //             let popup_input_answer = Line::from(input_modify_playlists_value.as_str()).alignment(Alignment::Center);
+        //             frame.render_widget(Paragraph::new(popup_input_answer)
+        //                 .style(Style::default().bg(Color::Magenta).fg(Color::White)), chunks[1]);
+        //         }
+        //         "table" => {
+        //             // let mut playlists_datas: Vec<Row> = Vec::new();
+        //             // for playlist in self.playlists_service.get_all_playlists() {
+        //             //     let is_in_playlist = playlist.songs_list.contains(self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("path").expect("Can't retrieve path of song file !"));
+        //             //     let checkbox: &str;
+        //             //     if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
+        //             //         checkbox = "[X]";
+        //             //     } else { checkbox = "[ ]"; }
+        //             //     playlists_datas.push(Row::new(vec![
+        //             //         checkbox,
+        //             //         &playlist.playlist_name
+        //             //     ]));
+        //             // }
+        //             // let selection_table = Table::new(
+        //             //     playlists_datas,
+        //             //     [
+        //             //         Constraint::Length(3),              // Selection box
+        //             //         Constraint::Fill(1),                // Playlist name
+        //             //     ])
+        //             //     .row_highlight_style(Style::default().bg(Color::Magenta).fg(Color::White));
+        //             // frame.render_stateful_widget(selection_table, chunks[1], &mut self.song_to_playlists_state);
+        //         }
+        //         "inputs_table" => {
+        //             let mut song_datas: Vec<Row> = Vec::new();
+        //             for (name, content) in &self.input_song_datas {
+        //                 song_datas.push(Row::new(vec![
+        //                     Cell::from(format!("{}:", name)), 
+        //                     Cell::from(Text::from(content.to_string()).alignment(TableAlignment::Right))
+        //                 ]))
+        //             }
+        //             let modify_table = Table::new(
+        //                 song_datas,
+        //                 [
+        //                     Constraint::Length(8),              // Entitled name
+        //                     Constraint::Fill(1),                // Entitled's content
+        //                 ])
+        //                 .row_highlight_style(Style::default().bg(Color::Magenta).fg(Color::White));
+        //             frame.render_stateful_widget(modify_table, chunks[1], &mut self.song_infos_state);
+        //         }
+        //         &_ => {}
+        //     }
+        // }
     }
 
     // Exit the app on key pressed

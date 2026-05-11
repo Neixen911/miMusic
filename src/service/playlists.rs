@@ -1,5 +1,6 @@
 use super::{Registry, Service, ServiceName};
-use super::super::music::Playlist;
+use crate::music;
+use music::Playlist;
 
 use ratatui::{
     layout::{Constraint, Rect},
@@ -8,7 +9,9 @@ use ratatui::{
     widgets::{Block, Row, Table, TableState},
     Frame
 };
+use std::any::Any;
 
+#[derive(Debug)]
 pub struct PlaylistsService {
     service_name: ServiceName,
     active_playlist: String,
@@ -69,10 +72,12 @@ impl Service for PlaylistsService {
         PlaylistsService {
             service_name: service_name,
             active_playlist: "All songs".to_string(),
-            all_playlists: Vec::new(),
+            all_playlists: music::get_all_playlists(),
             playlists_state: TableState::default().with_selected(0),
         }
     }
+
+    fn as_any(&mut self) -> &mut dyn Any { self }
 
     fn get_name(&self) -> &ServiceName {
         &self.service_name

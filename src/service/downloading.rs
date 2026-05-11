@@ -8,6 +8,7 @@ use ratatui::{
     widgets::{Block, Gauge},
     Frame
 };
+use std::any::Any;
 
 pub struct DownloadingService {
     pub service_name: ServiceName,
@@ -37,6 +38,8 @@ impl Service for DownloadingService {
             state_download: 0.0
         }
     }
+
+    fn as_any(&mut self) -> &mut dyn Any { self }
 
     fn get_name(&self) -> &ServiceName {
         &self.service_name

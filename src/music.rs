@@ -39,7 +39,7 @@ pub struct Player {
 	pub songs_loop: Vec<HashMap<String, String>>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Playlist {
 	pub playlist_name: String,
     pub songs_list: Vec<String>,
