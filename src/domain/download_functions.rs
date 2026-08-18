@@ -5,7 +5,7 @@ use crate::music::{
 };
 
 use archive::{ArchiveExtractor, ArchiveFormat};
-use id3::{Content, Frame as Id3Frame, Tag, TagLike, Version};
+use id3::{Content, Tag};
 use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File, read_dir, remove_file, rename};
@@ -114,12 +114,12 @@ pub async fn download_libs(libraries_dir: &PathBuf) {
 }
 
 // Download song from a unique URL
-pub fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String, selected_playlist: String) {
+pub fn download_song(sender: Sender<(u32, u32, u32, f64)>, song_url: String, selected_playlist: String) {
     tokio::spawn( async move {
         if let Ok(stream) = TcpStream::connect("8.8.4.4:53") {
             stream.shutdown(Shutdown::Both).expect("Can't shutdown stream check !");
         } else {
-            let _ = sender.send((0, 0, -98.0));
+            let _ = sender.send((1, 0, 0, -98.0));
             return;
         }
         if !fs::exists("libs").expect("Non authorized folder check !") {
@@ -127,11 +127,11 @@ pub fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String, selected
         }
         let libraries_dir = PathBuf::from("libs");
         if read_dir(&libraries_dir).expect("Can't iter over library folder !").next().is_none() {
-            let _ = sender.send((0, 0, -2.0));
+            let _ = sender.send((1, 0, 0, -2.0));
             let _ = download_libs(&libraries_dir).await;
         }
 
-        let _ = sender.send((0, 0, -3.0));
+        let _ = sender.send((1, 0, 0, -3.0));
         let mut yt_dlp = PathBuf::new();
         let mut ffmpeg = PathBuf::new();
         for filename in read_dir(&libraries_dir).expect("Can't iter over library folder !") {
@@ -145,7 +145,7 @@ pub fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String, selected
         }
         
         if yt_dlp.is_empty() || ffmpeg.is_empty() {
-            let _ = sender.send((0, 0, -99.0));
+            let _ = sender.send((1, 0, 0, -99.0));
             return;
         }
 
@@ -209,10 +209,10 @@ pub fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String, selected
                 downloaded_songs.push(line.split("=").into_iter().last().expect("Can't retrieve only the id of the downloaded song !").to_owned());
             }
 
-            let _ = sender.send((index, total, percent));
+            let _ = sender.send((1, index, total, percent));
         }
         let _ = status.wait().expect("Can't download song !");
-        let _ = sender.send((0, 0, -4.0));
+        let _ = sender.send((1, 0, 0, -4.0));
         
         let mut is_already_downloaded = false;
         for downloaded_song in downloaded_songs {
@@ -241,15 +241,15 @@ pub fn download_song(sender: Sender<(u32, u32, f64)>, song_url: String, selected
         }
 
         if is_already_downloaded {
-            let _ = sender.send((0, 0, -51.0));
+            let _ = sender.send((1, 0, 0, -51.0));
         } else {
-            let _ = sender.send((0, 0, -1.0));
+            let _ = sender.send((1, 0, 0, -1.0));
         }
     });
 }
 
 // Normalize songs which required to normalize
-pub fn normalize_songs(sender: Sender<(u32, u32, f64)>) {
+pub fn normalize_song(sender: Sender<(u32, u32, u32, f64)>) {
     tokio::spawn( async move {
         let ffmpeg = get_ffmpeg_path();
         let songs_dir = PathBuf::from("songs");
@@ -295,6 +295,7 @@ pub fn normalize_songs(sender: Sender<(u32, u32, f64)>) {
         for song_path in &songs_to_normalized {
             normalizing_index = normalizing_index + 1;
             let _ = sender.send((
+                2,
                 normalizing_index,
                 normalizing_total,
                 calculated_time
@@ -369,9 +370,10 @@ pub fn normalize_songs(sender: Sender<(u32, u32, f64)>) {
         }
 
         let _ = sender.send((
+            2,
             normalizing_total,
             normalizing_total,
-            100.0
+            -1.0
         ));
     });
 }
