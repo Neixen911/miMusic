@@ -1,28 +1,17 @@
-use archive::{ArchiveExtractor, ArchiveFormat};
 use id3::{Content, Frame as Id3Frame, Tag, TagLike, Version};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use rodio::{Decoder, Sink, source::EmptyCallback};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
-use std::fs::{self, File, read_to_string, read_dir, remove_file, rename};
-use std::io::{BufWriter, BufRead, BufReader, Write};
-use std::net::{Shutdown, TcpStream};
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::fs::{self, File, read_to_string, remove_file};
+use std::io::{BufWriter, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
-use tokio::sync::watch::Sender;
-
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 
 const OUTPUT_FILE_FORMAT: &str = "mp3";
-const OS: &str = std::env::consts::OS;
-const ARCH: &str = std::env::consts::ARCH;
 
 #[derive(Copy, Clone)]
 pub enum Loop {

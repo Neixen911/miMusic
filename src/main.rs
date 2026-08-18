@@ -23,7 +23,6 @@ use rodio::{OutputStreamBuilder, Sink};
 use std::io;
 use std::time::{Duration, Instant};
 use tokio;
-use tokio::sync::watch::{self, Receiver, Sender};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -44,8 +43,6 @@ async fn main() -> io::Result<()> {
         mode: "songs".to_string(),
         input_song_datas: Vec::new(),
         input_modify_playlists: InputTool::new("".to_string()),
-        downloading_started: false,
-        normalization_started: false,
         loop_value: Loop::None,
         is_running: false,
         is_answer_positive: false,
@@ -68,8 +65,6 @@ pub struct App {
     mode: String,
     input_song_datas: Vec<(String, String)>,
     input_modify_playlists: InputTool,
-    downloading_started: bool,
-    normalization_started: bool,
     loop_value: Loop,
     is_running: bool,
     is_answer_positive: bool,
@@ -84,8 +79,6 @@ impl App {
         self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
         self.playlists_service.set_all_playlists(music::get_all_playlists());
 
-        let (sender, mut receiver) = watch::channel((0, 0, 0.0));
-
         let tick_rate = Duration::from_millis(250);
         let mut tick_time_elapsed = Instant::now();
 
@@ -96,12 +89,12 @@ impl App {
             // Do not wait keys events more than 0.25s after render TUI
             let timeout = tick_rate.saturating_sub(tick_time_elapsed.elapsed());
             if event::poll(timeout).expect("Can't check if event::poll during timeout value !") {
-                self.handle_events(sender.clone()).await;
+                self.handle_events().await;
             }
 
             // Update datas each 0.25s (not each frame bc it makes 10x CPU usage)
             if tick_time_elapsed.elapsed() >= tick_rate {
-                self.update_datas(&mut receiver).await;
+                self.update_datas().await;
                 tick_time_elapsed = Instant::now();
             }
         }
@@ -109,24 +102,12 @@ impl App {
     }
 
     // Function to update all datas
-    async fn update_datas(&mut self, receiver: &mut Receiver<(u32, u32, f64)>) {
+    async fn update_datas(&mut self) {
         // Update data and retrieve song data in playing section
         self.player.update_datas();
         self.player_service.playing_infos = self.player.get_current_song_info();
 
         self.download_service.update();
-
-        // if self.normalization_started == true {
-        //     let (normalizing_index, normalizing_total, normalizing_percent) = *receiver.borrow();
-        //     if normalizing_total != 0 && normalizing_percent < 100.0 {
-        //         self.download_service.state_download = normalizing_percent / 100.0;
-        //         self.download_service.set_input_downloading(format!("Normalize process: {}/{} song(s)", normalizing_index, normalizing_total));
-        //     } else {
-        //         self.download_service.state_download = 0.0;
-        //         self.normalization_started = false;
-        //         self.download_service.set_input_downloading("Normalization process successfull !".to_string());
-        //     }
-        // }
         
         // Update all songs
         self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
@@ -136,10 +117,10 @@ impl App {
     }
 
     // Retrieve keys events
-    async fn handle_events(&mut self, sender: Sender<(u32, u32, f64)>) {
+    async fn handle_events(&mut self) {
         match event::read().expect("Can't read events !") {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event, sender).await;
+                self.handle_key_event(key_event).await;
             }
             _ => {}
         };
@@ -147,7 +128,7 @@ impl App {
 
     // Match key event to dedicated function
     // Refactor function calls to remove intermediate function calls (enter_action() using match isn't necessary if the right function is directly call)
-    async fn handle_key_event(&mut self, key_event: KeyEvent, sender: Sender<(u32, u32, f64)>) {
+    async fn handle_key_event(&mut self, key_event: KeyEvent) {
         match self.mode.as_str() {
             "songs" => {
                 match key_event.code {
@@ -253,15 +234,6 @@ impl App {
             "remove_popup_songs" => {
                 match key_event.code {
                     KeyCode::Enter                  => { self.remove_or_not_song(); },
-                    KeyCode::Tab                    => { self.switch_answer(); },
-                    KeyCode::Esc                    => { self.next_mode(); }
-                    _ => {}
-                }
-            }
-            "normalize_popup_songs" => {
-                match key_event.code {
-                    // A MODIFIER
-                    // KeyCode::Enter                  => { self.normalize_or_not_song(sender); },
                     KeyCode::Tab                    => { self.switch_answer(); },
                     KeyCode::Esc                    => { self.next_mode(); }
                     _ => {}
@@ -452,10 +424,6 @@ impl App {
                 next_mode = "songs";
                 self.active_service = ServiceName::SONGS;
             }
-            "normalize_popup_songs" => {
-                next_mode = "songs";
-                self.active_service = ServiceName::SONGS;
-            }
             &_ => {
                 next_mode = "";
                 self.active_service = ServiceName::NONE;
@@ -509,9 +477,6 @@ impl App {
             }
             "remove_song" => {
                 self.mode = "remove_popup_songs".to_string();
-            }
-            "normalize_song" => {
-                self.mode = "normalize_popup_songs".to_string();
             }
             &_ => {}
         }
@@ -591,13 +556,6 @@ impl App {
         self.next_mode();
     }
 
-    fn normalize_or_not_song(&mut self, sender: Sender<(u32, u32, f64)>) {
-        if self.is_answer_positive {
-            self.normalize_songs(sender);
-        }
-        self.next_mode();
-    }
-
     fn switch_answer(&mut self) {
         if self.is_answer_positive {
             self.is_answer_positive = false;
@@ -629,14 +587,6 @@ impl App {
             }
             &_ => {}
         }
-    }
-
-    fn normalize_songs(&mut self, sender: Sender<(u32, u32, f64)>) {
-        self.normalization_started = true;
-        tokio::spawn( async move {
-            // A SUPPRIMER
-            // music::normalize_songs(sender).await;
-        });
     }
 
     // Draw TUI app
