@@ -78,6 +78,8 @@ impl Service for PlaylistsService {
         &self.service_name
     }
 
+    fn update(&mut self) {}
+
     fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let mut playlists_datas: Vec<Row> = Vec::new();
         for playlist in &self.all_playlists {
