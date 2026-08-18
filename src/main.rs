@@ -138,7 +138,6 @@ impl App {
                     KeyCode::Down                   => { self.songs_service.next(); },
                     KeyCode::Char('m')              => { self.display_popup("modify_song"); },
                     KeyCode::Char('l')              => { self.set_favorites(); },
-                    KeyCode::Char('n')              => { self.display_popup("normalize_song"); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     KeyCode::Char('a')              => { self.display_popup("add_song"); },
                     KeyCode::Delete                 => { self.display_popup("remove_song"); },
@@ -625,7 +624,7 @@ impl App {
         let hotkeys_text: &str;
         match self.mode.as_str() {
             "songs" => {
-                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Normalize <N> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
             }
             "playing" => {
                 hotkeys_text = "Play/Pause <Space> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Shuffle <Backtab> - Loop <T> - Switch Mode <Tab> - Quit <Q>";
@@ -652,9 +651,6 @@ impl App {
                 hotkeys_text = "Navigate <Up/Down> - Add <Enter> - Close <Esc>";
             }
             "remove_popup_songs" => {
-                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
-            }
-            "normalize_popup_songs" => {
                 hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
             }
             &_ => {
@@ -699,11 +695,6 @@ impl App {
                 }
                 "remove_popup_songs" => {
                     popup_question = format!("Do you really want to delete '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
-                    answers_type = "binary";
-                    answer_height = Constraint::Max(1);
-                }
-                "normalize_popup_songs" => {
-                    popup_question = format!("Do you want to launch normalizations songs process ?");
                     answers_type = "binary";
                     answer_height = Constraint::Max(1);
                 }
