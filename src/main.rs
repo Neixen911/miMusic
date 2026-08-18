@@ -2,12 +2,13 @@
 #![feature(path_is_empty)]
 
 mod music;
-mod service;
-mod tool;
+mod domain;
+mod services;
+mod tools;
 
-use crate::tool::InputTool;
+use crate::tools::InputTool;
 use music::{Loop, Player};
-use service::{Service, ServiceName, PlayingService, DownloadingService, PlaylistsService, SongsService};
+use crate::services::{Service, ServiceName, PlayerService, DownloadService, PlaylistsService, SongsService};
 use dotenv::dotenv;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
@@ -36,8 +37,8 @@ async fn main() -> io::Result<()> {
             Sink::connect_new(stream_handle.mixer())
         ),
         active_service: ServiceName::SONGS,
-        playing_service: PlayingService::new(ServiceName::PLAYING),
-        downloading_service: DownloadingService::new(ServiceName::DOWNLOADING),
+        player_service: PlayerService::new(ServiceName::PLAYER),
+        download_service: DownloadService::new(ServiceName::DOWNLOAD),
         playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS),
         songs_service: SongsService::new(ServiceName::SONGS),
         mode: "songs".to_string(),
@@ -60,8 +61,8 @@ pub struct App {
     song_infos_state: TableState,
     player: Player,
     active_service: ServiceName,
-    playing_service: PlayingService,
-    downloading_service: DownloadingService,
+    player_service: PlayerService,
+    download_service: DownloadService,
     playlists_service: PlaylistsService,
     songs_service: SongsService,
     mode: String,
@@ -79,7 +80,7 @@ impl App {
         self.is_running = true;
         dotenv().ok();
         music::load_settings(&mut self.player);
-        self.playing_service.playing_infos = self.player.get_current_song_info();
+        self.player_service.playing_infos = self.player.get_current_song_info();
         self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
         self.playlists_service.set_all_playlists(music::get_all_playlists());
 
@@ -111,59 +112,21 @@ impl App {
     async fn update_datas(&mut self, receiver: &mut Receiver<(u32, u32, f64)>) {
         // Update data and retrieve song data in playing section
         self.player.update_datas();
-        self.playing_service.playing_infos = self.player.get_current_song_info();
+        self.player_service.playing_infos = self.player.get_current_song_info();
 
-        // Update progress bar during downloading song(s)
-        if self.downloading_started == true {
-            let (downloading_index, downloading_total, downlading_percent) = *receiver.borrow();
-            let mut index_of_total = String::from("");
-            if downloading_index != 0 && downloading_total != 0 {
-                index_of_total = format!("{}/{}", downloading_index, downloading_total);
-            }
-            if downlading_percent > 0.0 && downlading_percent <= 99.9 {
-                self.downloading_service.state_download = downlading_percent / 100.0;
-                self.downloading_service.set_input_downloading(format!("Download {}: {}%", index_of_total, downlading_percent));
-            }
-            if downlading_percent == -1.0 {
-                self.downloading_service.state_download = 0.0;
-                self.downloading_started = false;
-                self.downloading_service.set_input_downloading("Download successfull !".to_string());
-            }
-            if downlading_percent == -2.0 {
-                self.downloading_service.set_input_downloading("Installing librairies ...".to_string());
-            }
-            if downlading_percent == -3.0 {
-                self.downloading_service.set_input_downloading("Starting to fetch datas from YouTube URL ...".to_string());
-            }
-            if downlading_percent == -4.0 {
-                self.downloading_service.set_input_downloading("Check integrity and finalize ...".to_string());
-            }
-            if downlading_percent == -51.0 {
-                self.downloading_service.state_download = 0.0;
-                self.downloading_started = false;
-                self.downloading_service.set_input_downloading("Skip already downloaded songs and other ones successfully downloaded !".to_string());
-            }
-            if downlading_percent == -98.0 {
-                self.downloading_started = false;
-                self.downloading_service.set_input_downloading("No internet connection !".to_string());
-            }
-            if downlading_percent == -99.0 {
-                self.downloading_started = false;
-                self.downloading_service.set_input_downloading("Unsupported architecture ! Please report it to making an issue in Github !".to_string());
-            }
-        }
+        self.download_service.update();
 
-        if self.normalization_started == true {
-            let (normalizing_index, normalizing_total, normalizing_percent) = *receiver.borrow();
-            if normalizing_total != 0 && normalizing_percent < 100.0 {
-                self.downloading_service.state_download = normalizing_percent / 100.0;
-                self.downloading_service.set_input_downloading(format!("Normalize process: {}/{} song(s)", normalizing_index, normalizing_total));
-            } else {
-                self.downloading_service.state_download = 0.0;
-                self.normalization_started = false;
-                self.downloading_service.set_input_downloading("Normalization process successfull !".to_string());
-            }
-        }
+        // if self.normalization_started == true {
+        //     let (normalizing_index, normalizing_total, normalizing_percent) = *receiver.borrow();
+        //     if normalizing_total != 0 && normalizing_percent < 100.0 {
+        //         self.download_service.state_download = normalizing_percent / 100.0;
+        //         self.download_service.set_input_downloading(format!("Normalize process: {}/{} song(s)", normalizing_index, normalizing_total));
+        //     } else {
+        //         self.download_service.state_download = 0.0;
+        //         self.normalization_started = false;
+        //         self.download_service.set_input_downloading("Normalization process successfull !".to_string());
+        //     }
+        // }
         
         // Update all songs
         self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
@@ -217,15 +180,12 @@ impl App {
             }
             "download" => {
                 match key_event.code {
-                    KeyCode::Left                   => { self.downloading_service.input_downloading.left_input_position(); },
-                    KeyCode::Right                  => { self.downloading_service.input_downloading.right_input_position(); },
-                    KeyCode::Enter                  => {
-                        let input_downloading = self.downloading_service.input_downloading.get_input();
-                        self.download_songs_from_url(input_downloading, sender);
-                    },
-                    KeyCode::Backspace              => { self.downloading_service.input_downloading.remove_previous_char_from_input(); },
-                    KeyCode::Delete                 => { self.downloading_service.input_downloading.remove_next_char_from_input(); },
-                    KeyCode::Char(to_insert)        => { self.downloading_service.input_downloading.add_char_to_input(to_insert); },
+                    KeyCode::Left                   => { self.download_service.left_input_position(); },
+                    KeyCode::Right                  => { self.download_service.right_input_position(); },
+                    KeyCode::Enter                  => { self.download_service.download(); },
+                    KeyCode::Backspace              => { self.download_service.remove_previous_char_from_input(); },
+                    KeyCode::Delete                 => { self.download_service.remove_next_char_from_input(); },
+                    KeyCode::Char(to_insert)        => { self.download_service.add_char_to_input(to_insert); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
@@ -300,7 +260,8 @@ impl App {
             }
             "normalize_popup_songs" => {
                 match key_event.code {
-                    KeyCode::Enter                  => { self.normalize_or_not_song(sender); },
+                    // A MODIFIER
+                    // KeyCode::Enter                  => { self.normalize_or_not_song(sender); },
                     KeyCode::Tab                    => { self.switch_answer(); },
                     KeyCode::Esc                    => { self.next_mode(); }
                     _ => {}
@@ -453,11 +414,11 @@ impl App {
         match self.mode.as_str() {
             "songs" => {
                 next_mode = "playing";
-                self.active_service = ServiceName::PLAYING;
+                self.active_service = ServiceName::PLAYER;
             }
             "playing" => {
                 next_mode = "download";
-                self.active_service = ServiceName::DOWNLOADING;
+                self.active_service = ServiceName::DOWNLOAD;
             }
             "download" => {
                 next_mode = "playlists";
@@ -670,18 +631,11 @@ impl App {
         }
     }
 
-    fn download_songs_from_url(&mut self, url: String, sender: Sender<(u32, u32, f64)>) {
-        self.downloading_started = true;
-        let selected_playlist = self.playlists_service.get_active_playlist().to_owned();
-        tokio::spawn( async move {
-            music::download_song(sender, url, &selected_playlist).await;
-        });
-    }
-
     fn normalize_songs(&mut self, sender: Sender<(u32, u32, f64)>) {
         self.normalization_started = true;
         tokio::spawn( async move {
-            music::normalize_songs(sender).await;
+            // A SUPPRIMER
+            // music::normalize_songs(sender).await;
         });
     }
 
@@ -702,10 +656,10 @@ impl App {
         frame.render_widget(app_text, app);
         
         // Playing section
-        self.playing_service.render(frame, playing, &self.active_service);
+        self.player_service.render(frame, playing, &self.active_service);
 
         // Downloading section
-        self.downloading_service.render(frame, download, &self.active_service);
+        self.download_service.render(frame, download, &self.active_service);
 
         // Playlists & Songs section
         let horizontal = Layout::horizontal([
