@@ -6,8 +6,8 @@ use ratatui::{
 #[derive(PartialEq)]
 pub enum ServiceName {
     NONE,
-    PLAYING,
-    DOWNLOADING,
+    PLAYER,
+    DOWNLOAD,
     SONGS,
     PLAYLISTS
 }
@@ -17,17 +17,20 @@ pub trait Service {
     where
         Self: Sized;
     fn get_name(&self) -> &ServiceName;
+    fn update(&mut self)
+    where
+        Self: Sized;
     fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName)
     where
         Self: Sized;
 }
 
-pub mod playing;
-pub mod downloading;
+pub mod player;
+pub mod download;
 pub mod playlists;
 pub mod songs;
 
-pub use playing::PlayingService;
-pub use downloading::DownloadingService;
+pub use player::PlayerService;
+pub use download::DownloadService;
 pub use playlists::PlaylistsService;
 pub use songs::SongsService;

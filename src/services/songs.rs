@@ -108,6 +108,8 @@ impl Service for SongsService {
         &self.service_name
     }
 
+    fn update(&mut self) {}
+
     fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let mut songs_datas: Vec<Row> = Vec::new();
         for song in self.get_all_songs() {

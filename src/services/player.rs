@@ -8,12 +8,12 @@ use ratatui::{
     Frame
 };
 
-pub struct PlayingService {
+pub struct PlayerService {
     pub service_name: ServiceName,
     pub playing_infos: Vec<String>,
 }
 
-impl PlayingService {
+impl PlayerService {
     // Convert seconds to minutes/seconds
     fn seconds_to_minsec(seconds: f64) -> (u32, u32) {
         let min = (seconds / 60.0).floor() as u32;
@@ -23,9 +23,9 @@ impl PlayingService {
     }
 }
 
-impl Service for PlayingService {
+impl Service for PlayerService {
     fn new(service_name: ServiceName) -> Self {
-        PlayingService {
+        PlayerService {
             service_name: service_name,
             playing_infos: Vec::new(),
         }
@@ -34,6 +34,8 @@ impl Service for PlayingService {
     fn get_name(&self) -> &ServiceName {
         &self.service_name
     }
+
+    fn update(&mut self) {}
 
     fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let chunks = Layout::vertical([
