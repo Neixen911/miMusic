@@ -1,7 +1,3 @@
-use super::{Service, ServiceName};
-use crate::domain;
-use crate::tools::InputTool;
-
 use ratatui::{
     layout::{Constraint, Layout, Position, Rect},
     style::{Color, Modifier, Style},
@@ -11,6 +7,10 @@ use ratatui::{
 };
 use tokio;
 use tokio::sync::watch::{self, Receiver, Sender};
+
+use super::{Service, ServiceName};
+use crate::tools::InputTool;
+use crate::api;
 
 pub struct DownloadService {
     pub service_name: ServiceName,
@@ -22,10 +22,11 @@ pub struct DownloadService {
 }
 
 impl DownloadService {
+    // Download and normalize song(s)
     pub fn download(&mut self) {
         self.started = true;
-        domain::download_song(self.sender.clone(), self.get_input(), String::from("All songs"));
-        domain::normalize_song(self.sender.clone());
+        api::download_song(self.sender.clone(), self.get_input(), String::from("All songs"));
+        api::normalize_song(self.sender.clone());
     }
 
     // Update progress bar when downloading song(s)

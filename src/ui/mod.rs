@@ -25,12 +25,12 @@ pub trait Service {
         Self: Sized;
 }
 
-pub mod player;
-pub mod download;
-pub mod playlists;
-pub mod songs;
+pub mod player_ui;
+pub mod download_ui;
+pub mod playlists_ui;
+pub mod songs_ui;
 
-pub use player::PlayerService;
-pub use download::DownloadService;
-pub use playlists::PlaylistsService;
-pub use songs::SongsService;
+pub use player_ui::PlayerService;
+pub use download_ui::DownloadService;
+pub use playlists_ui::PlaylistsService;
+pub use songs_ui::SongsService;

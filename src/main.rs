@@ -1,14 +1,11 @@
 #![feature(str_split_remainder)]
 #![feature(path_is_empty)]
 
-mod music;
-mod domain;
-mod services;
+mod settings;
+mod api;
+mod ui;
 mod tools;
 
-use crate::tools::InputTool;
-use music::{Loop, Player};
-use crate::services::{Service, ServiceName, PlayerService, DownloadService, PlaylistsService, SongsService};
 use dotenv::dotenv;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
@@ -19,22 +16,20 @@ use ratatui::{
     widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
     DefaultTerminal, Frame,
 };
-use rodio::{OutputStreamBuilder, Sink};
-use std::io;
+use std::fs::{self, File, read_to_string};
+use std::io::{self, BufWriter, Write};
 use std::time::{Duration, Instant};
 use tokio;
+
+use crate::tools::InputTool;
+use crate::ui::{Service, ServiceName, PlayerService, DownloadService, PlaylistsService, SongsService};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
-    let mut stream_handle = OutputStreamBuilder::open_default_stream().expect("Unable to get OutputStreamBuilder !");
-    stream_handle.log_on_drop(false);
     let mut app = App {
         song_to_playlists_state: TableState::default().with_selected(0),
         song_infos_state: TableState::default().with_selected(0),
-        player: Player::new(
-            Sink::connect_new(stream_handle.mixer())
-        ),
         active_service: ServiceName::SONGS,
         player_service: PlayerService::new(ServiceName::PLAYER),
         download_service: DownloadService::new(ServiceName::DOWNLOAD),
@@ -43,7 +38,6 @@ async fn main() -> io::Result<()> {
         mode: "songs".to_string(),
         input_song_datas: Vec::new(),
         input_modify_playlists: InputTool::new("".to_string()),
-        loop_value: Loop::None,
         is_running: false,
         is_answer_positive: false,
     };
@@ -56,7 +50,6 @@ pub struct App {
     // Reorganise & reduce this variables (is_running at the end, some variables can maybe get out ...)
     song_to_playlists_state: TableState,
     song_infos_state: TableState,
-    player: Player,
     active_service: ServiceName,
     player_service: PlayerService,
     download_service: DownloadService,
@@ -65,7 +58,6 @@ pub struct App {
     mode: String,
     input_song_datas: Vec<(String, String)>,
     input_modify_playlists: InputTool,
-    loop_value: Loop,
     is_running: bool,
     is_answer_positive: bool,
 }
@@ -74,10 +66,7 @@ impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
         dotenv().ok();
-        music::load_settings(&mut self.player);
-        self.player_service.playing_infos = self.player.get_current_song_info();
-        self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
-        self.playlists_service.set_all_playlists(music::get_all_playlists());
+        self.load_settings();
 
         let tick_rate = Duration::from_millis(250);
         let mut tick_time_elapsed = Instant::now();
@@ -103,17 +92,14 @@ impl App {
 
     // Function to update all datas
     async fn update_datas(&mut self) {
-        // Update data and retrieve song data in playing section
-        self.player.update_datas();
-        self.player_service.playing_infos = self.player.get_current_song_info();
-
+        self.player_service.update();
         self.download_service.update();
         
         // Update all songs
-        self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
+        self.songs_service.set_all_songs(settings::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
 
         // Update all playlists
-        self.playlists_service.set_all_playlists(music::get_all_playlists());
+        self.playlists_service.set_all_playlists(settings::get_all_playlists());
     }
 
     // Retrieve keys events
@@ -147,13 +133,13 @@ impl App {
             "playing" => {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
-                    KeyCode::Char(' ')              => { self.pause_play_song(); },
-                    KeyCode::Up                     => { self.volume_up(); },
-                    KeyCode::Down                   => { self.volume_down(); },
-                    KeyCode::Char('t')              => { self.next_songs_loop(); },
-                    KeyCode::BackTab                => { self.player.shuffle_queue(); },
-                    KeyCode::Left                   => { self.skip_song(2); },
-                    KeyCode::Right                  => { self.skip_song(1); },
+                    KeyCode::Char(' ')              => { self.player_service.pause_play_song(); },
+                    KeyCode::Up                     => { self.player_service.increment_volume(); },
+                    KeyCode::Down                   => { self.player_service.decrement_volume(); },
+                    KeyCode::Char('t')              => { self.player_service.next_songs_loop(); },
+                    KeyCode::BackTab                => { self.player_service.shuffle_queue(); },
+                    KeyCode::Left                   => { self.player_service.skip_song(2); },
+                    KeyCode::Right                  => { self.player_service.skip_song(1); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
@@ -242,6 +228,35 @@ impl App {
         }
     }
 
+    // Load all the settings from the settings file
+    pub fn load_settings(&mut self) {
+        if !fs::exists("settings.json").expect("Non authorized folder check !") {
+            let mut initialisation: Vec<(String, f32)> = Vec::new();
+            initialisation.push(
+                ("Volume".to_string(), 1.0)
+            );
+
+            let settings_file = File::create("settings.json").expect("Failed to create/open settings.json");
+            let mut settings_writer = BufWriter::new(settings_file);
+            let _ = serde_json::to_writer(&mut settings_writer, &initialisation);
+            let _ = settings_writer.flush();
+        }
+        let settings_content = read_to_string("settings.json").expect("Can't read content of settings.json file !");
+        let settings: Vec<(String, f32)> = serde_json::from_str(&settings_content)
+            .expect("Settings JSON content is not well-formatted !");
+        for (key, value) in settings {
+            match key.as_str() {
+                "Volume" => {
+                    self.player_service.set_volume_manual(value);
+                }
+                &_ => {
+                    println!("{}: {}", key, value);
+                    continue;
+                }
+            }
+        }
+    }
+
     // Execute appropriate action depending on active mode
     fn enter_action(&mut self) {
         match self.mode.as_str() {
@@ -254,23 +269,18 @@ impl App {
                 if i.is_some() {
                     let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")]
                         .get("path").expect("Can't retrieve path of file song !").to_owned();
-                    self.add_song_to_queue(&path);
+                    self.player_service.add_song_to_queue(&path);
                 }
             }
             &_ => {}
         }
     }
 
-    // Add song to the queue on key pressed
-    fn add_song_to_queue(&mut self, path: &str) {
-        self.player.add_song_to_queue(path);
-    }
-
     // Add all songs of a playlist to the queue on key pressed
     fn add_all_songs_to_queue(&mut self) {
         for song_id in 0..self.songs_service.get_all_songs().len() {
             let path = self.songs_service.get_all_songs()[song_id].get("path").expect("Can't retrieve path of the song file !").to_owned();
-            self.add_song_to_queue(&path);
+            self.player_service.add_song_to_queue(&path);
         }
     }
 
@@ -325,45 +335,6 @@ impl App {
             }
             &_ => {}
         }
-    }
-
-    // Skip playing song on key pressed
-    fn skip_song(&mut self, skip_direction: u32) {
-        if !self.player.empty() {
-            self.player.skip_one(skip_direction);
-        }
-    }
-
-    // Play/Pause song on key pressed
-    fn pause_play_song(&mut self) {
-        if !self.player.is_paused() {
-            self.player.pause();
-        } else { self.player.play(); }
-    }
-
-    fn volume_up(&mut self) {
-        let volume = self.player.get_volume();
-        self.player.set_volume(volume + 0.01);
-    }
-
-    fn volume_down(&mut self) {
-        let volume = self.player.get_volume();
-        self.player.set_volume(volume - 0.01);
-    }
-
-    fn next_songs_loop(&mut self) {
-        match self.loop_value {
-            Loop::None => {
-                self.loop_value = Loop::Song;
-            },
-            Loop::Song => {
-                self.loop_value = Loop::Queue;
-            },
-            Loop::Queue => {
-                self.loop_value = Loop::None;
-            }
-        }
-        self.player.set_loop(self.loop_value);
     }
 
     fn switch_mode(&mut self) {
@@ -483,14 +454,14 @@ impl App {
 
     fn add_or_not_playlist(&mut self) {
         if self.is_answer_positive {
-            music::add_playlist();
+            settings::add_playlist();
         }
         self.next_mode();
     }
 
     fn modify_playlist(&mut self) {
         let i = self.playlists_service.get_playlists_state();
-        music::modify_playlist(i, &self.input_modify_playlists.get_input());
+        settings::modify_playlist(i, &self.input_modify_playlists.get_input());
         self.next_mode();
     }
 
@@ -513,7 +484,7 @@ impl App {
                 }
             }
 
-            music::modifying_metadata(
+            api::modifying_metadata(
                 self.songs_service.get_all_songs()[
                     self.songs_service.get_songs_state().expect("Can't retrieve active song id !")
                 ].get("path").expect("Can't retrieve path of song file !").to_string(),
@@ -526,7 +497,7 @@ impl App {
     fn remove_or_not_playlist(&mut self) {
         if self.is_answer_positive {
             let i = self.playlists_service.get_playlists_state();
-            music::remove_playlist(i);
+            settings::remove_playlist(i);
         }
         self.next_mode();
     }
@@ -540,7 +511,7 @@ impl App {
             .playlist_name
             .to_string();
         if selected_playlist != "All songs".to_string() {
-            music::add_or_remove_song_to_playlist(song_to_add, &selected_playlist);
+            settings::add_or_remove_song_to_playlist(song_to_add, &selected_playlist);
         }
     }
 
@@ -550,7 +521,7 @@ impl App {
                 .get("path")
                 .expect("Can't retrieve path of the selected song !")
                 .to_string();
-            music::remove_song(song_to_remove);
+            settings::remove_song(song_to_remove);
         }
         self.next_mode();
     }
@@ -566,7 +537,7 @@ impl App {
         if i.is_some() {
             let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")].get("path");
             let path = path.as_deref().expect("Unable to make the varibale as ownership !");
-            music::set_favorites(&path);
+            settings::set_favorites(&path);
         }
     }
 
