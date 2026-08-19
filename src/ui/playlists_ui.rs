@@ -1,6 +1,3 @@
-use super::{Service, ServiceName};
-use super::super::music::Playlist;
-
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Style},
@@ -9,10 +6,13 @@ use ratatui::{
     Frame
 };
 
+use super::{Service, ServiceName};
+use crate::settings;
+
 pub struct PlaylistsService {
     service_name: ServiceName,
     active_playlist: String,
-    all_playlists: Vec<Playlist>,
+    all_playlists: Vec<settings::Playlist>,
     playlists_state: TableState
 }
 
@@ -25,11 +25,11 @@ impl PlaylistsService {
         &self.active_playlist
     }
 
-    pub fn set_all_playlists(&mut self, new_playlist_list: Vec<Playlist>) {
+    pub fn set_all_playlists(&mut self, new_playlist_list: Vec<settings::Playlist>) {
         self.all_playlists = new_playlist_list;
     }
 
-    pub fn get_all_playlists(&self) -> &Vec<Playlist> {
+    pub fn get_all_playlists(&self) -> &Vec<settings::Playlist> {
         &self.all_playlists
     }
 

@@ -1,11 +1,7 @@
-// A MODIFIER
-use crate::music::{
-    add_or_remove_song_to_playlist,
-    modifying_metadata
-};
+use crate::settings;
 
 use archive::{ArchiveExtractor, ArchiveFormat};
-use id3::{Content, Tag};
+use id3::{Content, Frame as Id3Frame, Tag, TagLike, Version};
 use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File, read_dir, remove_file, rename};
@@ -235,7 +231,7 @@ pub fn download_song(sender: Sender<(u32, u32, u32, f64)>, song_url: String, sel
             if dowloaded_songs_to_selected_playlist.is_ok() {
                 if dowloaded_songs_to_selected_playlist.ok().expect("Can't retrieve string to bool values !") {
                     println!("Song add to selected playlist !");
-                    add_or_remove_song_to_playlist(parent_folder.join(&filename).to_str().expect("Can't convert PathBuf to str !").to_string(), &selected_playlist);
+                    settings::add_or_remove_song_to_playlist(parent_folder.join(&filename).to_str().expect("Can't convert PathBuf to str !").to_string(), &selected_playlist);
                 }
             }
         }
@@ -246,6 +242,32 @@ pub fn download_song(sender: Sender<(u32, u32, u32, f64)>, song_url: String, sel
             let _ = sender.send((1, 0, 0, -1.0));
         }
     });
+}
+
+// Mofidying metadata of the song
+pub fn modifying_metadata(filepath: String, new_song_datas: &Vec<(String, String)>) {
+	let file = File::open(&filepath).expect("Unable to open file !");
+	let mut tag = Tag::read_from2(&file).expect("Unable to get tags from file !");
+
+	for (name, content) in new_song_datas {
+		match name.as_str() {
+			"TIT2" => {
+				tag.set_title(content.to_string());
+			}
+			"TPE1" => {
+				tag.set_artist(content.to_string());
+			}
+			"TNOB" => {
+				tag.add_frame(Id3Frame::text("TNOB", content.to_string()));
+			}
+			&_ => {
+				println!("{}, {}", name, content);
+				continue;
+			}
+		}
+	}
+
+	tag.write_to_path(&filepath, Version::Id3v24).expect("Can't write metadata to the file");
 }
 
 // Normalize songs which required to normalize
