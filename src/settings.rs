@@ -22,16 +22,8 @@ pub fn update_settings(key: String, new_value: f32) {
 	}
 }
 
-// Return all the songs from the active playlist
-pub fn get_all_songs(playlist_name: &String) -> Vec<HashMap<String, String>> {
-	let mut songs = Vec::new();
-	let songs_path = if fs::exists("songs").expect("Non authorized folder check !") {
-		fs::read_dir("songs").expect("Can't retrieve songs folder !")
-	} else {
-		let _ = fs::create_dir("songs");
-		fs::read_dir("songs").expect("Can't retrieve songs folder !")
-	};
-
+// Verify that playlists.json exists or create it
+pub fn verify_files() {
 	if !fs::exists("playlists.json").expect("Non authorized folder check !") {
 		let mut new: Vec<Playlist> = Vec::new();
 		new.push(Playlist { playlist_name: "All songs".to_string(), songs_list: Vec::new() });
@@ -41,6 +33,18 @@ pub fn get_all_songs(playlist_name: &String) -> Vec<HashMap<String, String>> {
 		let _ = serde_json::to_writer(&mut playlists_writer, &new);
 		let _ = playlists_writer.flush();
 	}
+}
+
+// Return all the songs from the active playlist
+pub fn get_all_songs(playlist_name: &String) -> Vec<HashMap<String, String>> {
+	verify_files();
+	let mut songs = Vec::new();
+	let songs_path = if fs::exists("songs").expect("Non authorized folder check !") {
+		fs::read_dir("songs").expect("Can't retrieve songs folder !")
+	} else {
+		let _ = fs::create_dir("songs");
+		fs::read_dir("songs").expect("Can't retrieve songs folder !")
+	};
 
 	let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
 	let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)

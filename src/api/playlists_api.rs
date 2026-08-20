@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs::{File, read_to_string};
 use std::io::{BufWriter, Write};
 
+use crate::settings;
+
 #[derive(Deserialize, Serialize)]
 pub struct Playlist {
 	pub playlist_name: String,
@@ -90,6 +92,7 @@ pub fn remove_playlist(playlist_position_to_remove: usize) {
 
 // Return all playlists datas
 pub fn get_all_playlists() -> Vec<Playlist> {
+	settings::verify_files();
 	let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
 	let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
 		.expect("Playlists JSON content is not well-formatted !");
