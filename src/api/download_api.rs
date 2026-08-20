@@ -1,5 +1,3 @@
-use crate::settings;
-
 use archive::{ArchiveExtractor, ArchiveFormat};
 use id3::{Content, Frame as Id3Frame, Tag, TagLike, Version};
 use std::collections::HashMap;
@@ -13,6 +11,8 @@ use tokio::sync::watch::Sender;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+
+use crate::api;
 
 const OUTPUT_FILE_FORMAT: &str = "mp3";
 const OS: &str = std::env::consts::OS;
@@ -231,7 +231,7 @@ pub fn download_song(sender: Sender<(u32, u32, u32, f64)>, song_url: String, sel
             if dowloaded_songs_to_selected_playlist.is_ok() {
                 if dowloaded_songs_to_selected_playlist.ok().expect("Can't retrieve string to bool values !") {
                     println!("Song add to selected playlist !");
-                    settings::add_or_remove_song_to_playlist(parent_folder.join(&filename).to_str().expect("Can't convert PathBuf to str !").to_string(), &selected_playlist);
+                    api::toggle_playlists(parent_folder.join(&filename).to_str().expect("Can't convert PathBuf to str !").to_string(), &selected_playlist);
                 }
             }
         }
