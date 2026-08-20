@@ -94,12 +94,7 @@ impl App {
     async fn update_datas(&mut self) {
         self.player_service.update();
         self.download_service.update();
-        
-        // Update all songs
-        self.songs_service.set_all_songs(settings::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
-
-        // Update all playlists
-        self.playlists_service.set_all_playlists(settings::get_all_playlists());
+        self.songs_service.set_all_songs(settings::get_all_songs(self.playlists_service.get_active_playlist()));
     }
 
     // Retrieve keys events
@@ -159,14 +154,14 @@ impl App {
             "playlists" => {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
-                    KeyCode::Enter                  => { self.enter_action(); },
+                    KeyCode::Enter                  => { self.playlists_service.set_active_playlist(); },
                     KeyCode::Up                     => { self.playlists_service.previous(); },
                     KeyCode::Down                   => { self.playlists_service.next(); },
-                    KeyCode::Tab                    => { self.switch_mode(); },
                     KeyCode::BackTab                => { self.add_all_songs_to_queue(); },
                     KeyCode::Char('a')              => { self.display_popup("add_playlist"); },
                     KeyCode::Char('m')              => { self.display_popup("modify_playlist"); },
                     KeyCode::Delete                 => { self.display_popup("remove_playlist"); },
+                    KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
             }
@@ -211,7 +206,7 @@ impl App {
                 match key_event.code {
                     KeyCode::Up                     => { self.previous(); },
                     KeyCode::Down                   => { self.next(); },
-                    KeyCode::Enter                  => { self.add_or_remove_song_to_playlist(); },
+                    KeyCode::Enter                  => { self.toggle_playlists(); },
                     KeyCode::Esc                    => { self.next_mode(); }
                     _ => {}
                 }
@@ -260,10 +255,6 @@ impl App {
     // Execute appropriate action depending on active mode
     fn enter_action(&mut self) {
         match self.mode.as_str() {
-            "playlists" => {
-                let playlist_name = &self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name;
-                self.playlists_service.set_active_playlist(playlist_name.to_string());
-            }
             "songs" => {
                 let i = self.songs_service.get_songs_state();
                 if i.is_some() {
@@ -276,11 +267,11 @@ impl App {
         }
     }
 
-    // Add all songs of a playlist to the queue on key pressed
+    // PLAYLISTS service needed SONGS service to retrieve the selected song and PLAYER service to add it to the queue
     fn add_all_songs_to_queue(&mut self) {
-        for song_id in 0..self.songs_service.get_all_songs().len() {
-            let path = self.songs_service.get_all_songs()[song_id].get("path").expect("Can't retrieve path of the song file !").to_owned();
-            self.player_service.add_song_to_queue(&path);
+        let songs_to_add = settings::get_all_songs(self.playlists_service.get_active_playlist());
+        for song in songs_to_add {
+            self.player_service.add_song_to_queue(song.get("path").expect("Can't retrieve path of file song !"));
         }
     }
 
@@ -454,14 +445,14 @@ impl App {
 
     fn add_or_not_playlist(&mut self) {
         if self.is_answer_positive {
-            settings::add_playlist();
+            api::add_playlist();
         }
         self.next_mode();
     }
 
     fn modify_playlist(&mut self) {
         let i = self.playlists_service.get_playlists_state();
-        settings::modify_playlist(i, &self.input_modify_playlists.get_input());
+        api::modify_playlist(i, &self.input_modify_playlists.get_input());
         self.next_mode();
     }
 
@@ -497,21 +488,20 @@ impl App {
     fn remove_or_not_playlist(&mut self) {
         if self.is_answer_positive {
             let i = self.playlists_service.get_playlists_state();
-            settings::remove_playlist(i);
+            api::remove_playlist(i);
         }
         self.next_mode();
     }
 
-    fn add_or_remove_song_to_playlist(&mut self) {
-        let song_to_add = self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")]
+    fn toggle_playlists(&mut self) {
+        let song_path = self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")]
             .get("path")
             .expect("Can't retrieve path of the selected song !")
             .to_string();
-        let selected_playlist = self.playlists_service.get_all_playlists()[self.song_to_playlists_state.selected().expect("Can't be empty !")]
-            .playlist_name
-            .to_string();
-        if selected_playlist != "All songs".to_string() {
-            settings::add_or_remove_song_to_playlist(song_to_add, &selected_playlist);
+        let selected_playlist = &self.playlists_service.get_all_playlists()[self.song_to_playlists_state.selected().expect("Can't be empty !")]
+            .playlist_name;
+        if selected_playlist != "All songs" {
+            api::toggle_playlists(song_path, &selected_playlist);
         }
     }
 
@@ -533,12 +523,11 @@ impl App {
     }
 
     fn set_favorites(&mut self) {
-        let i = self.songs_service.get_songs_state();
-        if i.is_some() {
-            let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")].get("path");
-            let path = path.as_deref().expect("Unable to make the varibale as ownership !");
-            settings::set_favorites(&path);
-        }
+        let path = self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Cannot be a None value !")]
+            .get("path")
+            .expect("Can't retrieve path of the selected song !")
+            .to_string();
+        api::toggle_playlists(path, &"Favorites".to_string());
     }
 
     fn remove_char_from_input(&mut self) {
@@ -730,7 +719,8 @@ impl App {
                 }
                 "table" => {
                     let mut playlists_datas: Vec<Row> = Vec::new();
-                    for playlist in self.playlists_service.get_all_playlists() {
+                    let all_playlists = self.playlists_service.get_all_playlists();
+                    for playlist in &all_playlists {
                         let is_in_playlist = playlist.songs_list.contains(self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("path").expect("Can't retrieve path of song file !"));
                         let checkbox: &str;
                         if is_in_playlist || playlist.playlist_name == "All songs".to_string() {

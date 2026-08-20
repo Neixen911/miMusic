@@ -46,6 +46,7 @@ impl SongsService {
     }
 
     // Convert seconds to minutes/seconds
+    // DUPLICATED
     fn seconds_to_minsec(seconds: f64) -> (u32, u32) {
         let min = (seconds / 60.0).floor() as u32;
         let sec = (seconds % 60.0).round() as u32;
@@ -57,15 +58,15 @@ impl SongsService {
         self.all_songs = all_songs;
     }
 
-    pub fn get_all_songs(&self) -> &Vec<HashMap<String, String>> {
-        &self.all_songs
+    pub fn get_all_songs(&mut self) -> Vec<HashMap<String, String>> {
+        self.all_songs.clone()
     }
 
     pub fn set_songs_state(&mut self, new_song_state: Option<usize>) {
         self.songs_state.select(new_song_state);
     }
 
-    pub fn get_songs_state(&self) -> Option<usize> {
+    pub fn get_songs_state(&mut self) -> Option<usize> {
         self.songs_state.selected()
     }
 

@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
 
+use crate::api::{Playlist};
 use crate::settings;
 
 // TODO: Mettre dans un fichier de conf cette valeur car dupliquer dans download_api
@@ -286,7 +287,7 @@ pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
 			song_infos.insert(String::from("duration"), seconds.to_string());
 
 			let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
-			let playlists: Vec<settings::Playlist> = serde_json::from_str(&playlists_content)
+			let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
 				.expect("Playlists JSON content is not well-formatted !");
 			for playlist in playlists {
 				if playlist.playlist_name == "Favorites" {
