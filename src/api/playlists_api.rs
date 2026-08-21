@@ -28,7 +28,7 @@ pub fn toggle_playlists(path: String, selected_playlist: &String) {
 
 			let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
 			let mut playlists_writer = BufWriter::new(playlists_file);
-			let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+			let _ = serde_json::to_writer_pretty(&mut playlists_writer, &playlists);
 			let _ = playlists_writer.flush();
 			break;
 		}
@@ -57,7 +57,7 @@ pub fn add_playlist() {
 	playlists.push(new);
 	let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
 	let mut playlists_writer = BufWriter::new(playlists_file);
-	let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+	let _ = serde_json::to_writer_pretty(&mut playlists_writer, &playlists);
 	let _ = playlists_writer.flush();
 }
 
@@ -73,7 +73,7 @@ pub fn modify_playlist(actual_playlist_position: usize, new_playlist_name: &Stri
 
 	let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
 	let mut playlists_writer = BufWriter::new(playlists_file);
-	let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+	let _ = serde_json::to_writer_pretty(&mut playlists_writer, &playlists);
 	let _ = playlists_writer.flush();
 }
 
@@ -86,7 +86,7 @@ pub fn remove_playlist(playlist_position_to_remove: usize) {
 	playlists.remove(playlist_position_to_remove);
 	let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
 	let mut playlists_writer = BufWriter::new(playlists_file);
-	let _ = serde_json::to_writer(&mut playlists_writer, &playlists);
+	let _ = serde_json::to_writer_pretty(&mut playlists_writer, &playlists);
 	let _ = playlists_writer.flush();
 }
 

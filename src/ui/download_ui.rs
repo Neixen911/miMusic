@@ -35,7 +35,7 @@ impl DownloadService {
             let (intitule, downloading_index, downloading_total, downloading_percent) = *self.receiver.borrow();
             // Intitule 1: Download
             if intitule == 1 {
-                let mut index_of_total = String::from("");
+                let mut index_of_total = String::from("1/1");
                 if downloading_index != 0 && downloading_total != 0 {
                     index_of_total = format!("{}/{}", downloading_index, downloading_total);
                 }
