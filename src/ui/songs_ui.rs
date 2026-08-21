@@ -1,5 +1,3 @@
-use super::{Service, ServiceName};
-
 use ratatui::{
     layout::{Constraint, Rect},
     prelude::{Alignment},
@@ -10,10 +8,15 @@ use ratatui::{
 };
 use std::collections::HashMap;
 
+use crate::{Service, ServiceName};
+use crate::api;
+use crate::settings;
+
 pub struct SongsService {
     service_name: ServiceName,
-    all_songs: Vec<HashMap<String, String>>,
-    songs_state: TableState
+    songs_state: TableState,
+    // TODO: Retirer active_playlist d'ici et de Playlists service, puis gérer ça dans playlists.json avec clé/valeur
+    pub active_playlist: String,
 }
 
 impl SongsService {
@@ -45,21 +48,12 @@ impl SongsService {
         }
     }
 
-    // Convert seconds to minutes/seconds
-    // DUPLICATED
-    fn seconds_to_minsec(seconds: f64) -> (u32, u32) {
-        let min = (seconds / 60.0).floor() as u32;
-        let sec = (seconds % 60.0).round() as u32;
-
-        (min, sec)
-    }
-
-    pub fn set_all_songs(&mut self, all_songs: Vec<HashMap<String, String>>) {
-        self.all_songs = all_songs;
+    pub fn remove_song(&mut self, song_to_remove: String) {
+        api::remove_song(song_to_remove);
     }
 
     pub fn get_all_songs(&mut self) -> Vec<HashMap<String, String>> {
-        self.all_songs.clone()
+        api::get_all_songs(&self.active_playlist)
     }
 
     pub fn set_songs_state(&mut self, new_song_state: Option<usize>) {
@@ -100,8 +94,8 @@ impl Service for SongsService {
     fn new(service_name: ServiceName) -> Self {
         SongsService {
             service_name: service_name,
-            all_songs: Vec::new(),
             songs_state: TableState::default().with_selected(0),
+            active_playlist: "All songs".to_string(),
         }
     }
 
@@ -114,7 +108,7 @@ impl Service for SongsService {
     fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let mut songs_datas: Vec<Row> = Vec::new();
         for song in self.get_all_songs() {
-            let (min, sec) = Self::seconds_to_minsec(song.get("duration")
+            let (min, sec) = settings::seconds_to_minsec(song.get("duration")
                 .expect("Unable to get song duration !")
                 .to_string()
                 .parse::<f64>()

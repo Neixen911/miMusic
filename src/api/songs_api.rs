@@ -1,0 +1,62 @@
+use std::collections::HashMap;
+use std::fs::{self, File, read_to_string, remove_file};
+use std::io::{BufWriter, Write};
+
+use crate::api::{self, Playlist};
+use crate::settings;
+
+// Remove the selected song
+pub fn remove_song(song_to_remove: String) {
+	// Remove song from all playlists
+	let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+	let mut playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+		.expect("Playlists JSON content is not well-formatted !");
+	for playlist in &mut playlists {
+		if playlist.songs_list.contains(&song_to_remove) {
+			let position = playlist.songs_list.iter().position(|n| *n == song_to_remove).expect("Can't get position of path into JSON file !");
+			playlist.songs_list.swap_remove(position);
+		}
+	}
+
+	let playlists_file = File::create("playlists.json").expect("Failed to create/open playlists.json");
+	let mut playlists_writer = BufWriter::new(playlists_file);
+	let _ = serde_json::to_writer_pretty(&mut playlists_writer, &playlists);
+	let _ = playlists_writer.flush();
+
+	// Remove song itself
+	let _ = remove_file(&song_to_remove);
+}
+
+// Return all the songs from the active playlist
+pub fn get_all_songs(playlist_name: &String) -> Vec<HashMap<String, String>> {
+	settings::verify_files();
+	let mut songs = Vec::new();
+	let songs_path = if fs::exists("songs").expect("Non authorized folder check !") {
+		fs::read_dir("songs").expect("Can't retrieve songs folder !")
+	} else {
+		let _ = fs::create_dir("songs");
+		fs::read_dir("songs").expect("Can't retrieve songs folder !")
+	};
+
+	let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+	let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+		.expect("Playlists JSON content is not well-formatted !");
+	let is_playlist = playlists.iter().position(|playlist| playlist.playlist_name == *playlist_name);
+	if is_playlist.is_some() {
+		for playlist in playlists {
+			if &playlist.playlist_name == playlist_name {
+				for song_path in songs_path {
+					let song_infos = api::get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
+					if song_infos.get("is_song").expect("Can't get is_song variable !") == "true" {
+						if playlist_name == "All songs" || playlist.songs_list.contains(song_infos.get("path").expect("Can't get path variable !")) {
+							songs.push(song_infos);
+						}
+					}
+				}
+				break;
+			}
+		}
+	}
+
+	songs
+}
