@@ -241,6 +241,8 @@ pub fn download_song(sender: Sender<(u32, u32, u32, f64)>, song_url: String, sel
         } else {
             let _ = sender.send((1, 0, 0, -1.0));
         }
+
+        normalize_song(sender);
     });
 }
 
@@ -272,130 +274,128 @@ pub fn modifying_metadata(filepath: String, new_song_datas: &Vec<(String, String
 
 // Normalize songs which required to normalize
 pub fn normalize_song(sender: Sender<(u32, u32, u32, f64)>) {
-    tokio::spawn( async move {
-        let ffmpeg = get_ffmpeg_path();
-        let songs_dir = PathBuf::from("songs");
+    let ffmpeg = get_ffmpeg_path();
+    let songs_dir = PathBuf::from("songs");
 
-        let mut songs_to_normalized = Vec::new();
-        for song in read_dir(songs_dir).expect("Can't iterate over songs folder !") {
-            let path = song.expect("Can't retrieve song file !").path();
-            let path_str = path.to_str().expect("Can't convert to str !").to_owned();
-        
-            let mut is_normalized = "false".to_string();
-            if path_str.contains(OUTPUT_FILE_FORMAT) {
-                let file = File::open(&path_str).expect("Unable to open file !");
-                if let Ok(tag) = Tag::read_from2(&file) {
-                    for frame in tag.frames() {
-                        let id = frame.id();
-                        match frame.content() {
-                            Content::Text(value) => {
-                                match id {
-                                    "TNOB" => {
-                                        is_normalized = value.to_string();
-                                    }
-                                    _default => {
-                                        continue;
-                                    }
+    let mut songs_to_normalized = Vec::new();
+    for song in read_dir(songs_dir).expect("Can't iterate over songs folder !") {
+        let path = song.expect("Can't retrieve song file !").path();
+        let path_str = path.to_str().expect("Can't convert to str !").to_owned();
+    
+        let mut is_normalized = "false".to_string();
+        if path_str.contains(OUTPUT_FILE_FORMAT) {
+            let file = File::open(&path_str).expect("Unable to open file !");
+            if let Ok(tag) = Tag::read_from2(&file) {
+                for frame in tag.frames() {
+                    let id = frame.id();
+                    match frame.content() {
+                        Content::Text(value) => {
+                            match id {
+                                "TNOB" => {
+                                    is_normalized = value.to_string();
+                                }
+                                _default => {
+                                    continue;
                                 }
                             }
-                            _content => {
-                                continue;
-                            }
+                        }
+                        _content => {
+                            continue;
                         }
                     }
                 }
             }
-
-            if is_normalized.contains(&"false".to_string()) {
-                songs_to_normalized.push(path_str);
-            }
         }
 
-        let mut normalizing_index = 0;
-        let normalizing_total: u32 = songs_to_normalized.len().try_into().expect("Can't convert into u32 !");
-        let mut calculated_time = 0.0;
-        for song_path in &songs_to_normalized {
-            normalizing_index = normalizing_index + 1;
-            let _ = sender.send((
-                2,
-                normalizing_index,
-                normalizing_total,
-                calculated_time
-            ));
-
-            let filename = song_path;
-            let mut binding = Command::new(ffmpeg.to_str().expect("Unable to convert to str"));
-            let status = binding.args([
-                "-i", filename,
-                "-af",
-                "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json",
-                "-f",
-                "null",
-                "-"
-            ])
-            .output()
-            .expect("Can't retrieve output of normalize informations !");
-
-            let necessary_datas = ["input_i", "input_tp", "input_lra", "input_thresh", "target_offset"];
-            let json_data = String::from_utf8_lossy(&status.stderr);
-            let mut iterate_data = json_data.split("\n");
-            let mut datas = HashMap::new();
-
-            while let Some(line) = iterate_data.next() {
-                for required in necessary_datas {
-                    if line.contains(required) {
-                        let number: f64 = line
-                            .split('"')
-                            .filter_map(|s| s.parse::<f64>().ok())
-                            .next()
-                            .expect("Can't retrieve a valid number !");
-                        datas.insert(required, number);
-                        break;
-                    }
-                }
-            }
-
-            let filename_normalized = filename.replace(
-                ".",
-                "-tmp."
-            );
-            
-            let concatenated_audio_params = format!(
-                "loudnorm=I=-16:TP=-1.5:LRA=11:measured_I={:?}:measured_TP={:?}:measured_LRA={:?}:measured_thresh={:?}:offset={:?}:linear=true",
-                datas.get(necessary_datas[0]).expect("Can't retrieve input_i value !"),
-                datas.get(necessary_datas[1]).expect("Can't retrieve input_tp value !"),
-                datas.get(necessary_datas[2]).expect("Can't retrieve input_lra value !"),
-                datas.get(necessary_datas[3]).expect("Can't retrieve input_thresh value !"),
-                datas.get(necessary_datas[4]).expect("Can't retrieve target_offset value !")
-            );
-            
-            let mut second_binding = Command::new(ffmpeg.to_str().expect("Unable to convert to str"));
-            let _second_status = second_binding.args([
-                "-i", filename,
-                "-af",
-                &concatenated_audio_params,
-                "-ar",
-                "48000",
-                &filename_normalized
-            ])
-            .output()
-            .expect("Can't retrieve output of normalize informations !");
-
-            let _ = rename(filename_normalized, filename);
-
-            let mut normalized = Vec::new();
-            normalized.push(("TNOB".to_string(), "true".to_string()));
-            modifying_metadata(filename.to_string(), &normalized);
-
-            // A optimiser: récupérer le temps de vidéo déjà normalisé et calculer le temps restant
-            calculated_time = (100 * normalizing_index / normalizing_total) as f64
+        if is_normalized.contains(&"false".to_string()) {
+            songs_to_normalized.push(path_str);
         }
+    }
 
+    let mut normalizing_index = 0;
+    let normalizing_total: u32 = songs_to_normalized.len().try_into().expect("Can't convert into u32 !");
+    let mut calculated_time = 0.0;
+    for song_path in &songs_to_normalized {
+        normalizing_index = normalizing_index + 1;
         let _ = sender.send((
             2,
+            normalizing_index,
             normalizing_total,
-            normalizing_total,
-            -1.0
+            calculated_time
         ));
-    });
+
+        let filename = song_path;
+        let mut binding = Command::new(ffmpeg.to_str().expect("Unable to convert to str"));
+        let status = binding.args([
+            "-i", filename,
+            "-af",
+            "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json",
+            "-f",
+            "null",
+            "-"
+        ])
+        .output()
+        .expect("Can't retrieve output of normalize informations !");
+
+        let necessary_datas = ["input_i", "input_tp", "input_lra", "input_thresh", "target_offset"];
+        let json_data = String::from_utf8_lossy(&status.stderr);
+        let mut iterate_data = json_data.split("\n");
+        let mut datas = HashMap::new();
+
+        while let Some(line) = iterate_data.next() {
+            for required in necessary_datas {
+                if line.contains(required) {
+                    let number: f64 = line
+                        .split('"')
+                        .filter_map(|s| s.parse::<f64>().ok())
+                        .next()
+                        .expect("Can't retrieve a valid number !");
+                    datas.insert(required, number);
+                    break;
+                }
+            }
+        }
+
+        let filename_normalized = filename.replace(
+            ".",
+            "-tmp."
+        );
+        
+        let concatenated_audio_params = format!(
+            "loudnorm=I=-16:TP=-1.5:LRA=11:measured_I={:?}:measured_TP={:?}:measured_LRA={:?}:measured_thresh={:?}:offset={:?}:linear=true",
+            datas.get(necessary_datas[0]).expect("Can't retrieve input_i value !"),
+            datas.get(necessary_datas[1]).expect("Can't retrieve input_tp value !"),
+            datas.get(necessary_datas[2]).expect("Can't retrieve input_lra value !"),
+            datas.get(necessary_datas[3]).expect("Can't retrieve input_thresh value !"),
+            datas.get(necessary_datas[4]).expect("Can't retrieve target_offset value !")
+        );
+        
+        let mut second_binding = Command::new(ffmpeg.to_str().expect("Unable to convert to str"));
+        let _second_status = second_binding.args([
+            "-i", filename,
+            "-af",
+            &concatenated_audio_params,
+            "-ar",
+            "48000",
+            &filename_normalized
+        ])
+        .output()
+        .expect("Can't retrieve output of normalize informations !");
+
+        let _ = rename(filename_normalized, filename);
+
+        let mut normalized = Vec::new();
+        normalized.push(("TNOB".to_string(), "true".to_string()));
+        modifying_metadata(filename.to_string(), &normalized);
+
+        // A optimiser: récupérer le temps de vidéo déjà normalisé et calculer le temps restant
+        calculated_time = (100 * normalizing_index / normalizing_total) as f64
+    }
+
+    let _ = sender.send((
+        2,
+        normalizing_total,
+        normalizing_total,
+        -1.0
+    ));
 }
