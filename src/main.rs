@@ -445,14 +445,14 @@ impl App {
 
     fn add_or_not_playlist(&mut self) {
         if self.is_answer_positive {
-            api::add_playlist();
+            self.playlists_service.add_playlist();
         }
         self.next_mode();
     }
 
     fn modify_playlist(&mut self) {
         let i = self.playlists_service.get_playlists_state();
-        api::modify_playlist(i, &self.input_modify_playlists.get_input());
+        self.playlists_service.modify_playlist(i, &self.input_modify_playlists.get_input());
         self.next_mode();
     }
 
@@ -475,6 +475,7 @@ impl App {
                 }
             }
 
+            // TODO: Mettre modifying_metadata dans songs_service plutot
             api::modifying_metadata(
                 self.songs_service.get_all_songs()[
                     self.songs_service.get_songs_state().expect("Can't retrieve active song id !")
@@ -488,7 +489,7 @@ impl App {
     fn remove_or_not_playlist(&mut self) {
         if self.is_answer_positive {
             let i = self.playlists_service.get_playlists_state();
-            api::remove_playlist(i);
+            self.playlists_service.remove_playlist(i);
         }
         self.next_mode();
     }
@@ -501,7 +502,7 @@ impl App {
         let selected_playlist = &self.playlists_service.get_all_playlists()[self.song_to_playlists_state.selected().expect("Can't be empty !")]
             .playlist_name;
         if selected_playlist != "All songs" {
-            api::toggle_playlists(song_path, &selected_playlist);
+            self.playlists_service.toggle_playlists(song_path, &selected_playlist);
         }
     }
 
@@ -527,7 +528,7 @@ impl App {
             .get("path")
             .expect("Can't retrieve path of the selected song !")
             .to_string();
-        api::toggle_playlists(path, &"Favorites".to_string());
+        self.playlists_service.toggle_playlists(path, &"Favorites".to_string());
     }
 
     fn remove_char_from_input(&mut self) {
