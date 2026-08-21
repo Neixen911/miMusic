@@ -190,7 +190,7 @@ impl Player {
 
 		let today_file = File::create("playlists.json").expect("Failed to create today.json");
 		let mut today_writer = BufWriter::new(today_file);
-		let _ = serde_json::to_writer(&mut today_writer, &favorites);
+		let _ = serde_json::to_writer_pretty(&mut today_writer, &favorites);
 		let _ = today_writer.flush();
 	}
 

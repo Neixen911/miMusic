@@ -159,6 +159,7 @@ pub fn download_song(sender: Sender<(u32, u32, u32, f64)>, song_url: String, sel
         let filename = output_dir.join("%(id)s-tmp");
         let mut binding = Command::new(yt_dlp.to_str().expect("Unable to convert to str"));
         let mut status = binding.args([
+            "-U",
             "--progress",
             "--newline",
             "--no-write-subs", 
