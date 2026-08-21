@@ -16,6 +16,22 @@ pub struct PlaylistsService {
 }
 
 impl PlaylistsService {
+    pub fn toggle_playlists(&mut self, path: String, selected_playlist: &String) {
+        api::toggle_playlists(path, selected_playlist);
+    }
+
+    pub fn add_playlist(&mut self) {
+        api::add_playlist();
+    }
+
+    pub fn modify_playlist(&mut self, actual_playlist_position: usize, new_playlist_name: &String) {
+        api::modify_playlist(actual_playlist_position, new_playlist_name);
+    }
+
+    pub fn remove_playlist(&mut self, playlist_position_to_remove: usize) {
+        api::remove_playlist(playlist_position_to_remove);
+    }
+
     // Select previous playlist in playlists table
     pub fn previous(&mut self) {
         let mut selected_playlist_id = self.get_playlists_state();
