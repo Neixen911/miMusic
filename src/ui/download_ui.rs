@@ -26,7 +26,6 @@ impl DownloadService {
     pub fn download(&mut self) {
         self.started = true;
         api::download_song(self.sender.clone(), self.get_input(), String::from("All songs"));
-        api::normalize_song(self.sender.clone());
     }
 
     // Update progress bar when downloading song(s)
