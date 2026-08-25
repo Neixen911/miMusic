@@ -1,7 +1,3 @@
-use super::{Registry, Service, ServiceName};
-use crate::music;
-use music::Playlist;
-
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Style},
@@ -9,39 +5,32 @@ use ratatui::{
     widgets::{Block, Row, Table, TableState},
     Frame
 };
-use std::any::Any;
+
+use crate::{Service, ServiceName};
+use crate::api::{self, Playlist};
 
 #[derive(Debug)]
 pub struct PlaylistsService {
     service_name: ServiceName,
     active_playlist: String,
-    all_playlists: Vec<Playlist>,
     playlists_state: TableState
 }
 
 impl PlaylistsService {
-    pub fn set_active_playlist(&mut self, new_playlist: String) {
-        self.active_playlist = new_playlist;
+    pub fn toggle_playlists(&mut self, path: String, selected_playlist: &String) {
+        api::toggle_playlists(path, selected_playlist);
     }
 
-    pub fn get_active_playlist(&self) -> &String {
-        &self.active_playlist
+    pub fn add_playlist(&mut self) {
+        api::add_playlist();
     }
 
-    pub fn set_all_playlists(&mut self, new_playlist_list: Vec<Playlist>) {
-        self.all_playlists = new_playlist_list;
+    pub fn modify_playlist(&mut self, actual_playlist_position: usize, new_playlist_name: &String) {
+        api::modify_playlist(actual_playlist_position, new_playlist_name);
     }
 
-    pub fn get_all_playlists(&self) -> &Vec<Playlist> {
-        &self.all_playlists
-    }
-
-    pub fn set_playlists_state(&mut self, new_playlist_state: usize) {
-        self.playlists_state.select(Some(new_playlist_state));
-    }
-
-    pub fn get_playlists_state(&self) -> usize {
-        self.playlists_state.selected().expect("Can't retrieve active playlist selected id !")
+    pub fn remove_playlist(&mut self, playlist_position_to_remove: usize) {
+        api::remove_playlist(playlist_position_to_remove);
     }
 
     // Select previous playlist in playlists table
@@ -65,6 +54,27 @@ impl PlaylistsService {
         }
         self.set_playlists_state(selected_playlist_id);
     }
+
+    pub fn set_active_playlist(&mut self) {
+        let new_active_playlist = &self.get_all_playlists()[self.get_playlists_state()].playlist_name;
+        self.active_playlist = new_active_playlist.to_string();
+    }
+
+    pub fn get_active_playlist(&mut self) -> &String {
+        &self.active_playlist
+    }
+
+    pub fn set_playlists_state(&mut self, new_playlist_state: usize) {
+        self.playlists_state.select(Some(new_playlist_state));
+    }
+
+    pub fn get_playlists_state(&mut self) -> usize {
+        self.playlists_state.selected().expect("Can't retrieve active playlist selected id !")
+    }
+
+    pub fn get_all_playlists(&mut self) -> Vec<Playlist> {
+        api::get_all_playlists()
+    }
 }
 
 impl Service for PlaylistsService {
@@ -72,7 +82,6 @@ impl Service for PlaylistsService {
         PlaylistsService {
             service_name: service_name,
             active_playlist: "All songs".to_string(),
-            all_playlists: music::get_all_playlists(),
             playlists_state: TableState::default().with_selected(0),
         }
     }
@@ -83,9 +92,14 @@ impl Service for PlaylistsService {
         &self.service_name
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName, _registry: &Registry) {
+    fn update(&mut self) {}
+
+    fn update(&mut self) {}
+
+    fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let mut playlists_datas: Vec<Row> = Vec::new();
-        for playlist in &self.all_playlists {
+        let all_playlists = self.get_all_playlists();
+        for playlist in &all_playlists {
             playlists_datas.push(Row::new(vec![
                 playlist.playlist_name.as_str(),
             ]));

@@ -1,20 +1,11 @@
 #![feature(str_split_remainder)]
 #![feature(path_is_empty)]
 
-mod music;
-mod service;
-mod tool;
+mod settings;
+mod api;
+mod ui;
+mod tools;
 
-use crate::tool::InputTool;
-use music::{Loop, Player};
-use service::{
-    Registry,
-    Service, ServiceName,
-    PlayingService, PlayingInterface,
-    DownloadingService, DownloadingInterface,
-    SongsService, SongsInterface,
-    PlaylistsService, PlaylistsInterface
-};
 use dotenv::dotenv;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
@@ -25,35 +16,28 @@ use ratatui::{
     widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
     DefaultTerminal, Frame,
 };
-use rodio::{OutputStreamBuilder, Sink};
-use std::io;
+use std::fs::{self, File, read_to_string};
+use std::io::{self, BufWriter, Write};
 use std::time::{Duration, Instant};
 use tokio;
-use tokio::sync::watch::{self, Receiver, Sender};
+
+use crate::tools::InputTool;
+use crate::ui::{Service, ServiceName, PlayerService, DownloadService, PlaylistsService, SongsService};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
-    let mut stream_handle = OutputStreamBuilder::open_default_stream().expect("Unable to get OutputStreamBuilder !");
-    stream_handle.log_on_drop(false);
     let mut app = App {
         song_to_playlists_state: TableState::default().with_selected(0),
         song_infos_state: TableState::default().with_selected(0),
-        player: Player::new(
-            Sink::connect_new(stream_handle.mixer())
-        ),
-        active_service: ServiceName::SONGS(SongsInterface::DEFAULT),
-        registry: Registry::new(),
-        playing_service: PlayingService::new(ServiceName::PLAYING(PlayingInterface::DEFAULT)),
-        downloading_service: DownloadingService::new(ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT)),
-        playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT)),
-        songs_service: SongsService::new(ServiceName::SONGS(SongsInterface::DEFAULT)),
+        active_service: ServiceName::SONGS,
+        player_service: PlayerService::new(ServiceName::PLAYER),
+        download_service: DownloadService::new(ServiceName::DOWNLOAD),
+        playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS),
+        songs_service: SongsService::new(ServiceName::SONGS),
         mode: "songs".to_string(),
         input_song_datas: Vec::new(),
         input_modify_playlists: InputTool::new("".to_string()),
-        downloading_started: false,
-        normalization_started: false,
-        loop_value: Loop::None,
         is_running: false,
         is_answer_positive: false,
     };
@@ -66,19 +50,14 @@ pub struct App {
     // Reorganise & reduce this variables (is_running at the end, some variables can maybe get out ...)
     song_to_playlists_state: TableState,
     song_infos_state: TableState,
-    player: Player,
     active_service: ServiceName,
-    registry: Registry,
-    playing_service: PlayingService,
-    downloading_service: DownloadingService,
+    player_service: PlayerService,
+    download_service: DownloadService,
     playlists_service: PlaylistsService,
     songs_service: SongsService,
     mode: String,
     input_song_datas: Vec<(String, String)>,
     input_modify_playlists: InputTool,
-    downloading_started: bool,
-    normalization_started: bool,
-    loop_value: Loop,
     is_running: bool,
     is_answer_positive: bool,
 }
@@ -87,22 +66,7 @@ impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         self.is_running = true;
         dotenv().ok();
-        music::load_settings(&mut self.player);
-        self.registry.add_service(PlayingService::new(ServiceName::PLAYING(PlayingInterface::DEFAULT)));
-        self.registry.add_service(DownloadingService::new(ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT)));
-        self.registry.add_service(PlaylistsService::new(ServiceName::PLAYLISTS(PlaylistsInterface::DEFAULT)));
-        self.registry.add_service(SongsService::new(ServiceName::SONGS(SongsInterface::DEFAULT)));
-        self.playing_service.playing_infos = self.player.get_current_song_info();
-        self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
-        self.playlists_service.set_all_playlists(music::get_all_playlists());
-
-        // if let Some(playlist_service_result) = self.registry.get_service::<PlaylistsService>() {
-        //     let mut playlist_service_global = playlist_service_result.lock().unwrap();
-        //     let playlist_service = playlist_service_global.as_any().downcast_mut::<PlaylistsService>().unwrap();
-        //     playlist_service.set_all_playlists(music::get_all_playlists());
-        // }
-
-        let (sender, mut receiver) = watch::channel((0, 0, 0.0));
+        self.load_settings();
 
         let tick_rate = Duration::from_millis(250);
         let mut tick_time_elapsed = Instant::now();
@@ -114,12 +78,12 @@ impl App {
             // Do not wait keys events more than 0.25s after render TUI
             let timeout = tick_rate.saturating_sub(tick_time_elapsed.elapsed());
             if event::poll(timeout).expect("Can't check if event::poll during timeout value !") {
-                self.handle_events(sender.clone()).await;
+                self.handle_events().await;
             }
 
             // Update datas each 0.25s (not each frame bc it makes 10x CPU usage)
             if tick_time_elapsed.elapsed() >= tick_rate {
-                self.update_datas(&mut receiver).await;
+                self.update_datas().await;
                 tick_time_elapsed = Instant::now();
             }
         }
@@ -127,75 +91,17 @@ impl App {
     }
 
     // Function to update all datas
-    async fn update_datas(&mut self, receiver: &mut Receiver<(u32, u32, f64)>) {
-        // Update data and retrieve song data in playing section
-        self.player.update_datas();
-        self.playing_service.playing_infos = self.player.get_current_song_info();
-
-        // Update progress bar during downloading song(s)
-        if self.downloading_started == true {
-            let (downloading_index, downloading_total, downlading_percent) = *receiver.borrow();
-            let mut index_of_total = String::from("");
-            if downloading_index != 0 && downloading_total != 0 {
-                index_of_total = format!("{}/{}", downloading_index, downloading_total);
-            }
-            if downlading_percent > 0.0 && downlading_percent <= 99.9 {
-                self.downloading_service.state_download = downlading_percent / 100.0;
-                self.downloading_service.set_input_downloading(format!("Download {}: {}%", index_of_total, downlading_percent));
-            }
-            if downlading_percent == -1.0 {
-                self.downloading_service.state_download = 0.0;
-                self.downloading_started = false;
-                self.downloading_service.set_input_downloading("Download successfull !".to_string());
-            }
-            if downlading_percent == -2.0 {
-                self.downloading_service.set_input_downloading("Installing librairies ...".to_string());
-            }
-            if downlading_percent == -3.0 {
-                self.downloading_service.set_input_downloading("Starting to fetch datas from YouTube URL ...".to_string());
-            }
-            if downlading_percent == -4.0 {
-                self.downloading_service.set_input_downloading("Check integrity and finalize ...".to_string());
-            }
-            if downlading_percent == -51.0 {
-                self.downloading_service.state_download = 0.0;
-                self.downloading_started = false;
-                self.downloading_service.set_input_downloading("Skip already downloaded songs and other ones successfully downloaded !".to_string());
-            }
-            if downlading_percent == -98.0 {
-                self.downloading_started = false;
-                self.downloading_service.set_input_downloading("No internet connection !".to_string());
-            }
-            if downlading_percent == -99.0 {
-                self.downloading_started = false;
-                self.downloading_service.set_input_downloading("Unsupported architecture ! Please report it to making an issue in Github !".to_string());
-            }
-        }
-
-        if self.normalization_started == true {
-            let (normalizing_index, normalizing_total, normalizing_percent) = *receiver.borrow();
-            if normalizing_total != 0 && normalizing_percent < 100.0 {
-                self.downloading_service.state_download = normalizing_percent / 100.0;
-                self.downloading_service.set_input_downloading(format!("Normalize process: {}/{} song(s)", normalizing_index, normalizing_total));
-            } else {
-                self.downloading_service.state_download = 0.0;
-                self.normalization_started = false;
-                self.downloading_service.set_input_downloading("Normalization process successfull !".to_string());
-            }
-        }
-        
-        // Update all songs
-        self.songs_service.set_all_songs(music::get_all_songs_from_active_playlist(self.playlists_service.get_active_playlist()));
-
-        // Update all playlists
-        self.playlists_service.set_all_playlists(music::get_all_playlists());
+    async fn update_datas(&mut self) {
+        self.player_service.update();
+        self.download_service.update();
+        self.songs_service.active_playlist = self.playlists_service.get_active_playlist().to_string();
     }
 
     // Retrieve keys events
-    async fn handle_events(&mut self, sender: Sender<(u32, u32, f64)>) {
+    async fn handle_events(&mut self) {
         match event::read().expect("Can't read events !") {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event, sender).await;
+                self.handle_key_event(key_event).await;
             }
             _ => {}
         };
@@ -203,17 +109,16 @@ impl App {
 
     // Match key event to dedicated function
     // Refactor function calls to remove intermediate function calls (enter_action() using match isn't necessary if the right function is directly call)
-    async fn handle_key_event(&mut self, key_event: KeyEvent, sender: Sender<(u32, u32, f64)>) {
+    async fn handle_key_event(&mut self, key_event: KeyEvent) {
         match self.mode.as_str() {
             "songs" => {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
-                    KeyCode::Enter                  => { self.enter_action(); },
+                    KeyCode::Enter                  => { self.add_song_to_queue(); },
                     KeyCode::Up                     => { self.songs_service.previous(); },
                     KeyCode::Down                   => { self.songs_service.next(); },
                     KeyCode::Char('m')              => { self.display_popup("modify_song"); },
                     KeyCode::Char('l')              => { self.set_favorites(); },
-                    KeyCode::Char('n')              => { self.display_popup("normalize_song"); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     KeyCode::Char('a')              => { self.display_popup("add_song"); },
                     KeyCode::Delete                 => { self.display_popup("remove_song"); },
@@ -223,28 +128,25 @@ impl App {
             "playing" => {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
-                    KeyCode::Char(' ')              => { self.pause_play_song(); },
-                    KeyCode::Up                     => { self.volume_up(); },
-                    KeyCode::Down                   => { self.volume_down(); },
-                    KeyCode::Char('t')              => { self.next_songs_loop(); },
-                    KeyCode::BackTab                => { self.player.shuffle_queue(); },
-                    KeyCode::Left                   => { self.skip_song(2); },
-                    KeyCode::Right                  => { self.skip_song(1); },
+                    KeyCode::Char(' ')              => { self.player_service.pause_play_song(); },
+                    KeyCode::Up                     => { self.player_service.increment_volume(); },
+                    KeyCode::Down                   => { self.player_service.decrement_volume(); },
+                    KeyCode::Char('t')              => { self.player_service.next_songs_loop(); },
+                    KeyCode::BackTab                => { self.player_service.shuffle_queue(); },
+                    KeyCode::Left                   => { self.player_service.skip_song(2); },
+                    KeyCode::Right                  => { self.player_service.skip_song(1); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
             }
             "download" => {
                 match key_event.code {
-                    KeyCode::Left                   => { self.downloading_service.input_downloading.left_input_position(); },
-                    KeyCode::Right                  => { self.downloading_service.input_downloading.right_input_position(); },
-                    KeyCode::Enter                  => {
-                        let input_downloading = self.downloading_service.input_downloading.get_input();
-                        self.download_songs_from_url(input_downloading, sender);
-                    },
-                    KeyCode::Backspace              => { self.downloading_service.input_downloading.remove_previous_char_from_input(); },
-                    KeyCode::Delete                 => { self.downloading_service.input_downloading.remove_next_char_from_input(); },
-                    KeyCode::Char(to_insert)        => { self.downloading_service.input_downloading.add_char_to_input(to_insert); },
+                    KeyCode::Left                   => { self.download_service.left_input_position(); },
+                    KeyCode::Right                  => { self.download_service.right_input_position(); },
+                    KeyCode::Enter                  => { self.download_service.download(); },
+                    KeyCode::Backspace              => { self.download_service.remove_previous_char_from_input(); },
+                    KeyCode::Delete                 => { self.download_service.remove_next_char_from_input(); },
+                    KeyCode::Char(to_insert)        => { self.download_service.add_char_to_input(to_insert); },
                     KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
@@ -252,14 +154,14 @@ impl App {
             "playlists" => {
                 match key_event.code {
                     KeyCode::Char('q')              => { self.exit(); },
-                    KeyCode::Enter                  => { self.enter_action(); },
+                    KeyCode::Enter                  => { self.playlists_service.set_active_playlist(); },
                     KeyCode::Up                     => { self.playlists_service.previous(); },
                     KeyCode::Down                   => { self.playlists_service.next(); },
-                    KeyCode::Tab                    => { self.switch_mode(); },
                     KeyCode::BackTab                => { self.add_all_songs_to_queue(); },
                     KeyCode::Char('a')              => { self.display_popup("add_playlist"); },
                     KeyCode::Char('m')              => { self.display_popup("modify_playlist"); },
                     KeyCode::Delete                 => { self.display_popup("remove_playlist"); },
+                    KeyCode::Tab                    => { self.switch_mode(); },
                     _ => {}
                 }
             }
@@ -304,7 +206,7 @@ impl App {
                 match key_event.code {
                     KeyCode::Up                     => { self.previous(); },
                     KeyCode::Down                   => { self.next(); },
-                    KeyCode::Enter                  => { self.add_or_remove_song_to_playlist(); },
+                    KeyCode::Enter                  => { self.toggle_playlists(); },
                     KeyCode::Esc                    => { self.next_mode(); }
                     _ => {}
                 }
@@ -317,47 +219,56 @@ impl App {
                     _ => {}
                 }
             }
-            "normalize_popup_songs" => {
-                match key_event.code {
-                    KeyCode::Enter                  => { self.normalize_or_not_song(sender); },
-                    KeyCode::Tab                    => { self.switch_answer(); },
-                    KeyCode::Esc                    => { self.next_mode(); }
-                    _ => {}
-                }
-            }
             &_ => {}
         }
     }
 
-    // Execute appropriate action depending on active mode
-    fn enter_action(&mut self) {
-        match self.mode.as_str() {
-            "playlists" => {
-                let playlist_name = &self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name;
-                self.playlists_service.set_active_playlist(playlist_name.to_string());
-            }
-            "songs" => {
-                let i = self.songs_service.get_songs_state();
-                if i.is_some() {
-                    let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")]
-                        .get("path").expect("Can't retrieve path of file song !").to_owned();
-                    self.add_song_to_queue(&path);
+    // Load all the settings from the settings file
+    pub fn load_settings(&mut self) {
+        if !fs::exists("settings.json").expect("Non authorized folder check !") {
+            let mut initialisation: Vec<(String, f32)> = Vec::new();
+            initialisation.push(
+                ("Volume".to_string(), 1.0)
+            );
+
+            let settings_file = File::create("settings.json").expect("Failed to create/open settings.json");
+            let mut settings_writer = BufWriter::new(settings_file);
+            let _ = serde_json::to_writer_pretty(&mut settings_writer, &initialisation);
+            let _ = settings_writer.flush();
+        }
+        let settings_content = read_to_string("settings.json").expect("Can't read content of settings.json file !");
+        let settings: Vec<(String, f32)> = serde_json::from_str(&settings_content)
+            .expect("Settings JSON content is not well-formatted !");
+        for (key, value) in settings {
+            match key.as_str() {
+                "Volume" => {
+                    self.player_service.set_volume_manual(value);
+                }
+                &_ => {
+                    println!("{}: {}", key, value);
+                    continue;
                 }
             }
-            &_ => {}
         }
     }
 
-    // Add song to the queue on key pressed
-    fn add_song_to_queue(&mut self, path: &str) {
-        self.player.add_song_to_queue(path);
+    // SONGS service needed PLAYER service to add song to the queue
+    fn add_song_to_queue(&mut self) {
+        let selected_song = self.songs_service.get_selected_song();
+        if selected_song.is_some() {
+            let path = selected_song.expect("Cannot be a None value !")
+                .get("path")
+                .expect("Can't retrieve path of file song !")
+                .to_string();
+            self.player_service.add_song_to_queue(path);
+        }
     }
 
-    // Add all songs of a playlist to the queue on key pressed
+    // PLAYLISTS service needed SONGS service to retrieve the selected song and PLAYER service to add it to the queue
     fn add_all_songs_to_queue(&mut self) {
-        for song_id in 0..self.songs_service.get_all_songs().len() {
-            let path = self.songs_service.get_all_songs()[song_id].get("path").expect("Can't retrieve path of the song file !").to_owned();
-            self.add_song_to_queue(&path);
+        let songs_to_add = self.songs_service.get_all_songs();
+        for song in songs_to_add {
+            self.player_service.add_song_to_queue(song.get("path").expect("Can't retrieve path of file song !").to_string());
         }
     }
 
@@ -400,7 +311,12 @@ impl App {
             "modify_popup_songs" => {
                 let i = match self.song_infos_state.selected() {
                     Some(i) => {
-                        if i >= self.songs_service.get_modify_song_infos().len() - 1 {
+                        let filepath = self.songs_service.get_selected_song()
+                            .expect("Can't be a None value !")
+                            .get("path")
+                            .expect("Can't retrieve path of song file !")
+                            .to_string();
+                        if i >= self.songs_service.get_modify_metadata(filepath).len() - 1 {
                             0
                         } else {
                             i + 1
@@ -412,45 +328,6 @@ impl App {
             }
             &_ => {}
         }
-    }
-
-    // Skip playing song on key pressed
-    fn skip_song(&mut self, skip_direction: u32) {
-        if !self.player.empty() {
-            self.player.skip_one(skip_direction);
-        }
-    }
-
-    // Play/Pause song on key pressed
-    fn pause_play_song(&mut self) {
-        if !self.player.is_paused() {
-            self.player.pause();
-        } else { self.player.play(); }
-    }
-
-    fn volume_up(&mut self) {
-        let volume = self.player.get_volume();
-        self.player.set_volume(volume + 0.01);
-    }
-
-    fn volume_down(&mut self) {
-        let volume = self.player.get_volume();
-        self.player.set_volume(volume - 0.01);
-    }
-
-    fn next_songs_loop(&mut self) {
-        match self.loop_value {
-            Loop::None => {
-                self.loop_value = Loop::Song;
-            },
-            Loop::Song => {
-                self.loop_value = Loop::Queue;
-            },
-            Loop::Queue => {
-                self.loop_value = Loop::None;
-            }
-        }
-        self.player.set_loop(self.loop_value);
     }
 
     fn switch_mode(&mut self) {
@@ -472,11 +349,11 @@ impl App {
         match self.mode.as_str() {
             "songs" => {
                 next_mode = "playing";
-                self.active_service = ServiceName::PLAYING(PlayingInterface::DEFAULT);
+                self.active_service = ServiceName::PLAYER;
             }
             "playing" => {
                 next_mode = "download";
-                self.active_service = ServiceName::DOWNLOADING(DownloadingInterface::DEFAULT);
+                self.active_service = ServiceName::DOWNLOAD;
             }
             "download" => {
                 next_mode = "playlists";
@@ -507,10 +384,6 @@ impl App {
                 self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
             "remove_popup_songs" => {
-                next_mode = "songs";
-                self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
-            }
-            "normalize_popup_songs" => {
                 next_mode = "songs";
                 self.active_service = ServiceName::SONGS(SongsInterface::DEFAULT);
             }
@@ -542,25 +415,43 @@ impl App {
                 }
             }
             "modify_song" => {
-                let modify_song_infos = self.songs_service.get_modify_song_infos();
-                self.input_song_datas = Vec::new();
-                for (entitled_name, entitled_content) in modify_song_infos {
-                    let entitled_name_formatted: String;
-                    match entitled_name.as_str() {
-                        "TIT2" => {
-                            entitled_name_formatted = "Title".to_string();
+                let selected_song = self.songs_service.get_selected_song();
+                if selected_song.is_some() {
+                    let filepath = selected_song
+                        .expect("Can't be a None value !")
+                        .get("path")
+                        .expect("Can't retrieve path of song file !")
+                        .to_string();
+                    let modify_song_infos = self.songs_service.get_modify_metadata(filepath);
+                    self.input_song_datas = Vec::new();
+                    for (entitled_name, entitled_content) in modify_song_infos {
+                        let entitled_name_formatted: String;
+                        match entitled_name.as_str() {
+                            "TIT2" => {
+                                entitled_name_formatted = "Title".to_string();
+                            }
+                            "TPE1" => {
+                                entitled_name_formatted = "Artist".to_string();
+                            }
+                            _default => {
+                                continue;
+                            }
                         }
-                        "TPE1" => {
-                            entitled_name_formatted = "Artist".to_string();
-                        }
-                        _default => {
-                            continue;
-                        }
+                        self.input_song_datas.push((entitled_name_formatted, entitled_content));
                     }
-                    self.input_song_datas.push((entitled_name_formatted, entitled_content));
+                    let order_to_display = vec![
+                        "Title".to_string(),
+                        "Artist".to_string(),
+                    ];
+                    self.input_song_datas.sort_by_key(|(key, _)| {
+                        order_to_display
+                            .iter()
+                            .position(|x| x == key)
+                            .unwrap_or(usize::MAX)
+                    });
+                    self.song_infos_state.select(Some(0));
+                    self.mode = "modify_popup_songs".to_string();
                 }
-                self.song_infos_state.select(Some(0));
-                self.mode = "modify_popup_songs".to_string();
             }
             "add_song" => {
                 self.mode = "add_popup_songs".to_string();
@@ -569,90 +460,101 @@ impl App {
             "remove_song" => {
                 self.mode = "remove_popup_songs".to_string();
             }
-            "normalize_song" => {
-                self.mode = "normalize_popup_songs".to_string();
-            }
             &_ => {}
         }
     }
 
     fn add_or_not_playlist(&mut self) {
         if self.is_answer_positive {
-            music::add_playlist();
+            self.playlists_service.add_playlist();
         }
         self.next_mode();
     }
 
     fn modify_playlist(&mut self) {
         let i = self.playlists_service.get_playlists_state();
-        music::modify_playlist(i, &self.input_modify_playlists.get_input());
+        self.playlists_service.modify_playlist(i, &self.input_modify_playlists.get_input());
         self.next_mode();
     }
 
+    // TODO: Revoir ça parce que c'est flou ce que ça fait ... (lu vite fait / en diagonale)
     fn modify_song(&mut self) {
-        if self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !") < self.songs_service.get_modify_song_infos().len() - 1 {
-            self.next();
-        } else {
-            let mut formatted_infos: Vec<(String, String)> = Vec::new();
-            for (title, content) in &self.input_song_datas {
-                match title.as_str() {
-                    "Title" => {
-                        formatted_infos.push(("TIT2".to_string(), content.to_string()));
-                    }
-                    "Artist" => {
-                        formatted_infos.push(("TPE1".to_string(), content.to_string()));
-                    }
-                    _default => {
-                        continue;
+        let selected_song = self.songs_service.get_selected_song();
+        if selected_song.is_some() {
+            let actual_modified_intitule = self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !");
+            let filepath = selected_song.clone()
+                .expect("Can't be a None value !")
+                .get("path")
+                .expect("Can't retrieve path of song file !")
+                .to_string();
+            let song_last_intitule = self.songs_service.get_modify_metadata(filepath).len() - 1;
+            if actual_modified_intitule < song_last_intitule {
+                self.next();
+            } else {
+                let mut formatted_infos: Vec<(String, String)> = Vec::new();
+                for (title, content) in &self.input_song_datas {
+                    match title.as_str() {
+                        "Title" => {
+                            formatted_infos.push(("TIT2".to_string(), content.to_string()));
+                        }
+                        "Artist" => {
+                            formatted_infos.push(("TPE1".to_string(), content.to_string()));
+                        }
+                        _default => {
+                            continue;
+                        }
                     }
                 }
-            }
 
-            music::modifying_metadata(
-                self.songs_service.get_all_songs()[
-                    self.songs_service.get_songs_state().expect("Can't retrieve active song id !")
-                ].get("path").expect("Can't retrieve path of song file !").to_string(),
-                &formatted_infos
-            );
-            self.next_mode();
+                self.songs_service.set_metadata(
+                    selected_song
+                        .expect("Can't be a None value !")
+                        .get("path")
+                        .expect("Can't retrieve path of song file !")
+                        .to_string(),
+                    &formatted_infos
+                );
+                self.next_mode();
+            }
         }
     }
 
     fn remove_or_not_playlist(&mut self) {
         if self.is_answer_positive {
             let i = self.playlists_service.get_playlists_state();
-            music::remove_playlist(i);
+            self.playlists_service.remove_playlist(i);
         }
         self.next_mode();
     }
 
-    fn add_or_remove_song_to_playlist(&mut self) {
-        let song_to_add = self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")]
-            .get("path")
-            .expect("Can't retrieve path of the selected song !")
-            .to_string();
-        let selected_playlist = self.playlists_service.get_all_playlists()[self.song_to_playlists_state.selected().expect("Can't be empty !")]
-            .playlist_name
-            .to_string();
-        if selected_playlist != "All songs".to_string() {
-            music::add_or_remove_song_to_playlist(song_to_add, &selected_playlist);
+    // PLAYLISTS service needed SONGS service to retrieve active song to add to playlist
+    fn toggle_playlists(&mut self) {
+        let selected_song = self.songs_service.get_selected_song();
+        if selected_song.is_some() {
+            let song_path = selected_song
+                .expect("Can't be a None value !")
+                .get("path")
+                .expect("Can't retrieve path of the selected song !")
+                .to_string();
+            let selected_playlist = &self.playlists_service.get_all_playlists()[self.song_to_playlists_state.selected().expect("Can't be empty !")]
+                .playlist_name;
+            if selected_playlist != "All songs" {
+                self.playlists_service.toggle_playlists(song_path, selected_playlist);
+            }
         }
     }
 
     fn remove_or_not_song(&mut self) {
         if self.is_answer_positive {
-            let song_to_remove = self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")]
-                .get("path")
-                .expect("Can't retrieve path of the selected song !")
-                .to_string();
-            music::remove_song(song_to_remove);
-        }
-        self.next_mode();
-    }
-
-    fn normalize_or_not_song(&mut self, sender: Sender<(u32, u32, f64)>) {
-        if self.is_answer_positive {
-            self.normalize_songs(sender);
+            let selected_song = self.songs_service.get_selected_song();
+            if selected_song.is_some() {
+                let song_to_remove = selected_song
+                    .expect("Can't be a None value !")
+                    .get("path")
+                    .expect("Can't retrieve path of the selected song !")
+                    .to_string();
+                self.songs_service.remove_song(song_to_remove);
+            }
         }
         self.next_mode();
     }
@@ -663,12 +565,16 @@ impl App {
         } else { self.is_answer_positive = true };
     }
 
+    // PLAYLISTS service needs SONGS service to retrieve active song and add it to 'Favorites' playlist
     fn set_favorites(&mut self) {
-        let i = self.songs_service.get_songs_state();
-        if i.is_some() {
-            let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")].get("path");
-            let path = path.as_deref().expect("Unable to make the varibale as ownership !");
-            music::set_favorites(&path);
+        let selected_song = self.songs_service.get_selected_song();
+        if selected_song.is_some() {
+            let path = selected_song
+                .expect("Can't be a None value !")
+                .get("path")
+                .expect("Can't retrieve path of the selected song !")
+                .to_string();
+            self.playlists_service.toggle_playlists(path, &"Favorites".to_string());
         }
     }
 
@@ -690,21 +596,6 @@ impl App {
         }
     }
 
-    fn download_songs_from_url(&mut self, url: String, sender: Sender<(u32, u32, f64)>) {
-        self.downloading_started = true;
-        let selected_playlist = self.playlists_service.get_active_playlist().to_owned();
-        tokio::spawn( async move {
-            music::download_song(sender, url, &selected_playlist).await;
-        });
-    }
-
-    fn normalize_songs(&mut self, sender: Sender<(u32, u32, f64)>) {
-        self.normalization_started = true;
-        tokio::spawn( async move {
-            music::normalize_songs(sender).await;
-        });
-    }
-
     // Draw TUI app
     fn draw(&mut self, frame: &mut Frame) {
         let vertical = Layout::vertical([
@@ -722,10 +613,10 @@ impl App {
         frame.render_widget(app_text, app);
         
         // Playing section
-        self.playing_service.render(frame, playing, &self.active_service, &self.registry);
+        self.player_service.render(frame, playing, &self.active_service);
 
         // Downloading section
-        self.downloading_service.render(frame, download, &self.active_service, &self.registry);
+        self.download_service.render(frame, download, &self.active_service);
 
         // Playlists & Songs section
         let horizontal = Layout::horizontal([
@@ -741,7 +632,7 @@ impl App {
         let hotkeys_text: &str;
         match self.mode.as_str() {
             "songs" => {
-                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Normalize <N> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
+                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
             }
             "playing" => {
                 hotkeys_text = "Play/Pause <Space> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Shuffle <Backtab> - Loop <T> - Switch Mode <Tab> - Quit <Q>";
@@ -770,9 +661,6 @@ impl App {
             "remove_popup_songs" => {
                 hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
             }
-            "normalize_popup_songs" => {
-                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
-            }
             &_ => {
                 hotkeys_text = "";
             }
@@ -783,54 +671,67 @@ impl App {
 
         // Playlists AND Songs popup (Create/Modify/Delete AND Add)
         // if self.mode.as_str().contains("popup") {
-        //     let popup_question: String;
-        //     let answers_type: &str;
-        //     let answer_height: Constraint;
+        //     let mut popup_question: String = String::from("");
+        //     let mut answers_type: &str = "";
+        //     let mut answer_height: Constraint = Constraint::Max(1);
 
-        //     match self.mode.as_str() {
-        //         "add_popup_playlists" => {
-        //             popup_question = format!("Do you want to add a new playlist ?");
-        //             answers_type = "binary";
-        //             answer_height = Constraint::Max(1);
-        //         }
-        //         "modify_popup_playlists" => {
-        //             popup_question = format!("What's the new name of the selected playlist ?");
-        //             answers_type = "input";
-        //             answer_height = Constraint::Max(1);
-        //         }
-        //         "remove_popup_playlists" => {
-        //             popup_question = format!("Do you really want to delete '{}' playlist ?", self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name);
-        //             answers_type = "binary";
-        //             answer_height = Constraint::Max(1);
-        //         }
-        //         "modify_popup_songs" => {
-        //             popup_question = format!("What is the new informations of this song ?");
-        //             answers_type = "inputs_table";
-        //             answer_height = Constraint::Max(2);
-        //         }
-        //         "add_popup_songs" => {
-        //             popup_question = format!("In which playlist(s) do you want to add '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
-        //             answers_type = "table";
-        //             answer_height = Constraint::Max(3);
-        //         }
-        //         "remove_popup_songs" => {
-        //             popup_question = format!("Do you really want to delete '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
-        //             answers_type = "binary";
-        //             answer_height = Constraint::Max(1);
-        //         }
-        //         "normalize_popup_songs" => {
-        //             popup_question = format!("Do you want to launch normalizations songs process ?");
-        //             answers_type = "binary";
-        //             answer_height = Constraint::Max(1);
-        //         }
-        //         &_ => {
-        //             // Delete a random song (1/1000 chance)
-        //             popup_question = format!("Bro, no question here. Just you and me. Choose and good luck !");
-        //             answers_type = "binary";
-        //             answer_height = Constraint::Max(1);
-        //         }
-        //     }
-        //     let popup = frame.area();
+            // match self.mode.as_str() {
+            //     "add_popup_playlists" => {
+            //         popup_question = format!("Do you want to add a new playlist ?");
+            //         answers_type = "binary";
+            //         answer_height = Constraint::Max(1);
+            //     }
+            //     "modify_popup_playlists" => {
+            //         popup_question = format!("What's the new name of the selected playlist ?");
+            //         answers_type = "input";
+            //         answer_height = Constraint::Max(1);
+            //     }
+            //     "remove_popup_playlists" => {
+            //         popup_question = format!("Do you really want to delete '{}' playlist ?", self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name);
+            //         answers_type = "binary";
+            //         answer_height = Constraint::Max(1);
+            //     }
+            //     "modify_popup_songs" => {
+            //         popup_question = format!("What is the new informations of this song ?");
+            //         answers_type = "inputs_table";
+            //         answer_height = Constraint::Max(2);
+            //     }
+            //     "add_popup_songs" => {
+            //         let selected_song = self.songs_service.get_selected_song();
+            //         if selected_song.is_some() {
+            //             popup_question = format!(
+            //                 "In which playlist(s) do you want to add '{}' song ?",
+            //                 selected_song
+            //                     .expect("Can't be a None value !")
+            //                     .get("title")
+            //                     .expect("Can't have an empty title name song !")
+            //             );
+            //             answers_type = "table";
+            //             answer_height = Constraint::Max(3);
+            //         }
+            //     }
+            //     "remove_popup_songs" => {
+            //         let selected_song = self.songs_service.get_selected_song();
+            //         if selected_song.is_some() {
+            //             popup_question = format!(
+            //                 "Do you really want to delete '{}' song ?",
+            //                 selected_song
+            //                     .expect("Can't be a None value !")
+            //                     .get("title")
+            //                     .expect("Can't have an empty title name song !")
+            //             );
+            //             answers_type = "binary";
+            //             answer_height = Constraint::Max(1);
+            //         }
+            //     }
+            //     &_ => {
+            //         // Delete a random song (1/1000 chance)
+            //         popup_question = format!("Bro, no question here. Just you and me. Choose and good luck !");
+            //         answers_type = "binary";
+            //         answer_height = Constraint::Max(1);
+            //     }
+            // }
+            // let popup = frame.area();
 
         //     let vertical = Layout::vertical([Constraint::Length(12)]).flex(Flex::Center);
         //     let horizontal = Layout::horizontal([Constraint::Length(50)]).flex(Flex::Center);
@@ -884,16 +785,20 @@ impl App {
         //         }
         //         "table" => {
         //             // let mut playlists_datas: Vec<Row> = Vec::new();
-        //             // for playlist in self.playlists_service.get_all_playlists() {
-        //             //     let is_in_playlist = playlist.songs_list.contains(self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("path").expect("Can't retrieve path of song file !"));
-        //             //     let checkbox: &str;
-        //             //     if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
-        //             //         checkbox = "[X]";
-        //             //     } else { checkbox = "[ ]"; }
-        //             //     playlists_datas.push(Row::new(vec![
-        //             //         checkbox,
-        //             //         &playlist.playlist_name
-        //             //     ]));
+        //             // let all_playlists = self.playlists_service.get_all_playlists();
+        //             // for playlist in &all_playlists {
+                        // let selected_song = self.songs_service.get_selected_song();
+                        // if selected_song.is_some() {
+                        //     let is_in_playlist = playlist.songs_list.contains(selected_song.expect("Can't be a None value !").get("path").expect("Can't retrieve path of song file !"));
+            //             //     let checkbox: &str;
+            //             //     if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
+            //             //         checkbox = "[X]";
+            //             //     } else { checkbox = "[ ]"; }
+            //             //     playlists_datas.push(Row::new(vec![
+            //             //         checkbox,
+            //             //         &playlist.playlist_name
+            //             //     ]));
+                        // }
         //             // }
         //             // let selection_table = Table::new(
         //             //     playlists_datas,
