@@ -1,19 +1,15 @@
-use id3::{Content, Tag};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use rodio::{Decoder, Sink, source::EmptyCallback};
 use std::collections::HashMap;
-use std::fs::{File, read_to_string};
+use std::fs::{File};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use symphonia::core::{formats::FormatOptions, meta::MetadataOptions, io::{MediaSourceStream, MediaSource}};
 use symphonia::default::get_probe;
 
-use crate::api::{Playlist};
+use crate::api;
 use crate::settings;
-
-// TODO: Mettre dans un fichier de conf cette valeur car dupliquer dans download_api
-const OUTPUT_FILE_FORMAT: &str = "mp3";
 
 #[derive(Copy, Clone)]
 pub enum Loop {
@@ -126,8 +122,8 @@ impl Player {
 	}
 
 	// Add a song to the queue
-	pub fn add_song_to_queue(&mut self, path: &str) {
-		let song = get_song_infos_from_file(path);
+	pub fn add_song_to_queue(&mut self, path: String) {
+		let song = api::get_all_metadata(path);
 		self.songs_queue.push(song);
 	}
 
@@ -181,7 +177,7 @@ impl Player {
 		if self.end_of_song_signal.load(Ordering::Relaxed) > 0 {
 			// Check if loop song is activated
 			if self.songs_loop.len() == 1 {
-				self.add_song_to_queue(&self.songs_loop[0].get("path").expect("Can't retrieve path of the song file !").to_owned());
+				self.add_song_to_queue(self.songs_loop[0].get("path").expect("Can't retrieve path of the song file !").to_string());
 			}
 			// Determine the listening direction
 			match self.end_of_song_signal.load(Ordering::Relaxed) {
@@ -208,8 +204,8 @@ impl Player {
 				self.add_signal_end_song();
 			}
 			for song_id in 0..self.songs_loop.len() {
-				let path = self.songs_loop[song_id].get("path").expect("Can't retrieve path of the song file !").to_owned();
-				self.add_song_to_queue(&path);
+				let path = self.songs_loop[song_id].get("path").expect("Can't retrieve path of the song file !").to_string();
+				self.add_song_to_queue(path);
 			}
 		}
 	}
@@ -235,73 +231,6 @@ pub fn get_audio_duration(path: &str) -> u32 {
 	let duration_seconds = duration_in_frames as f64 / sample_rate as f64;
 
 	duration_seconds as u32
-}
-
-// Return infos from song file
-pub fn get_song_infos_from_file(path: &str) -> HashMap<String, String> {
-	let mut song_infos = HashMap::new();
-	let mut is_song = false;
-	
-	if path.contains(OUTPUT_FILE_FORMAT) {
-		let file = File::open(path).expect("Unable to open file !");
-
-		if let Ok(tag) = Tag::read_from2(&file) {	
-			is_song = true;
-
-			// Default datas
-			song_infos.insert(String::from("path"), path.to_string());
-			song_infos.insert(String::from("title"), "Unknown".to_string());
-			song_infos.insert(String::from("artist"), "Unknown".to_string());
-			song_infos.insert(String::from("duration"), "0".to_string());
-			song_infos.insert(String::from("is_favorite"), "♡".to_string());
-			// A optimiser
-			song_infos.insert(String::from("is_normalized"), "false".to_string());
-			
-			for frame in tag.frames() {
-				let id = frame.id();
-			
-				match frame.content() {
-					Content::Text(value) => {
-						match id {
-							"TIT2" => {
-								song_infos.insert(String::from("title"), value.to_string());
-							}
-							"TPE1" => {
-								song_infos.insert(String::from("artist"), value.to_string());
-							}
-							"TNOB" => {
-								song_infos.insert(String::from("is_normalized"), value.to_string());
-							}
-							_default => {
-								continue;
-							}
-						}
-					}
-					_content => {
-						continue;
-					}
-				}
-			}
-
-			let seconds = get_audio_duration(path);
-			song_infos.insert(String::from("duration"), seconds.to_string());
-
-			let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
-			let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
-				.expect("Playlists JSON content is not well-formatted !");
-			for playlist in playlists {
-				if playlist.playlist_name == "Favorites" {
-					if playlist.songs_list.contains(&path.to_string()) {
-						song_infos.insert(String::from("is_favorite"), "♥".to_string());
-					}
-					break;
-				}
-			}
-		}
-	}
-	song_infos.insert(String::from("is_song"), is_song.to_string());
-
-	song_infos
 }
 
 // Convert seconds to minutes/seconds
