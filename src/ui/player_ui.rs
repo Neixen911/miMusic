@@ -46,7 +46,7 @@ impl PlayerService {
     }
 
     // Add song to queue
-    pub fn add_song_to_queue(&mut self, path: &str) {
+    pub fn add_song_to_queue(&mut self, path: String) {
         self.player.add_song_to_queue(path);
     }
 

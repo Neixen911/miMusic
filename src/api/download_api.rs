@@ -1,5 +1,5 @@
 use archive::{ArchiveExtractor, ArchiveFormat};
-use id3::{Content, Frame as Id3Frame, Tag, TagLike, Version};
+use id3::{Content, Tag};
 use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File, read_dir, remove_file, rename};
@@ -247,32 +247,6 @@ pub fn download_song(sender: Sender<(u32, u32, u32, f64)>, song_url: String, sel
     });
 }
 
-// Mofidying metadata of the song
-pub fn modifying_metadata(filepath: String, new_song_datas: &Vec<(String, String)>) {
-	let file = File::open(&filepath).expect("Unable to open file !");
-	let mut tag = Tag::read_from2(&file).expect("Unable to get tags from file !");
-
-	for (name, content) in new_song_datas {
-		match name.as_str() {
-			"TIT2" => {
-				tag.set_title(content.to_string());
-			}
-			"TPE1" => {
-				tag.set_artist(content.to_string());
-			}
-			"TNOB" => {
-				tag.add_frame(Id3Frame::text("TNOB", content.to_string()));
-			}
-			&_ => {
-				println!("{}, {}", name, content);
-				continue;
-			}
-		}
-	}
-
-	tag.write_to_path(&filepath, Version::Id3v24).expect("Can't write metadata to the file");
-}
-
 // Normalize songs which required to normalize
 pub fn normalize_song(sender: Sender<(u32, u32, u32, f64)>) {
     let ffmpeg = get_ffmpeg_path();
@@ -387,7 +361,7 @@ pub fn normalize_song(sender: Sender<(u32, u32, u32, f64)>) {
 
         let mut normalized = Vec::new();
         normalized.push(("TNOB".to_string(), "true".to_string()));
-        modifying_metadata(filename.to_string(), &normalized);
+        api::set_metadata(filename.to_string(), &normalized);
 
         // A optimiser: récupérer le temps de vidéo déjà normalisé et calculer le temps restant
         calculated_time = (100 * normalizing_index / normalizing_total) as f64

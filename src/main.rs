@@ -254,13 +254,13 @@ impl App {
 
     // SONGS service needed PLAYER service to add song to the queue
     fn add_song_to_queue(&mut self) {
-        let i = self.songs_service.get_songs_state();
-        if i.is_some() {
-            let path = self.songs_service.get_all_songs()[i.expect("Cannot be a None value !")]
+        let selected_song = self.songs_service.get_selected_song();
+        if selected_song.is_some() {
+            let path = selected_song.expect("Cannot be a None value !")
                 .get("path")
                 .expect("Can't retrieve path of file song !")
-                .to_owned();
-            self.player_service.add_song_to_queue(&path);
+                .to_string();
+            self.player_service.add_song_to_queue(path);
         }
     }
 
@@ -268,7 +268,7 @@ impl App {
     fn add_all_songs_to_queue(&mut self) {
         let songs_to_add = self.songs_service.get_all_songs();
         for song in songs_to_add {
-            self.player_service.add_song_to_queue(song.get("path").expect("Can't retrieve path of file song !"));
+            self.player_service.add_song_to_queue(song.get("path").expect("Can't retrieve path of file song !").to_string());
         }
     }
 
@@ -311,7 +311,12 @@ impl App {
             "modify_popup_songs" => {
                 let i = match self.song_infos_state.selected() {
                     Some(i) => {
-                        if i >= self.songs_service.get_modify_song_infos().len() - 1 {
+                        let filepath = self.songs_service.get_selected_song()
+                            .expect("Can't be a None value !")
+                            .get("path")
+                            .expect("Can't retrieve path of song file !")
+                            .to_string();
+                        if i >= self.songs_service.get_modify_metadata(filepath).len() - 1 {
                             0
                         } else {
                             i + 1
@@ -410,25 +415,43 @@ impl App {
                 }
             }
             "modify_song" => {
-                let modify_song_infos = self.songs_service.get_modify_song_infos();
-                self.input_song_datas = Vec::new();
-                for (entitled_name, entitled_content) in modify_song_infos {
-                    let entitled_name_formatted: String;
-                    match entitled_name.as_str() {
-                        "TIT2" => {
-                            entitled_name_formatted = "Title".to_string();
+                let selected_song = self.songs_service.get_selected_song();
+                if selected_song.is_some() {
+                    let filepath = selected_song
+                        .expect("Can't be a None value !")
+                        .get("path")
+                        .expect("Can't retrieve path of song file !")
+                        .to_string();
+                    let modify_song_infos = self.songs_service.get_modify_metadata(filepath);
+                    self.input_song_datas = Vec::new();
+                    for (entitled_name, entitled_content) in modify_song_infos {
+                        let entitled_name_formatted: String;
+                        match entitled_name.as_str() {
+                            "TIT2" => {
+                                entitled_name_formatted = "Title".to_string();
+                            }
+                            "TPE1" => {
+                                entitled_name_formatted = "Artist".to_string();
+                            }
+                            _default => {
+                                continue;
+                            }
                         }
-                        "TPE1" => {
-                            entitled_name_formatted = "Artist".to_string();
-                        }
-                        _default => {
-                            continue;
-                        }
+                        self.input_song_datas.push((entitled_name_formatted, entitled_content));
                     }
-                    self.input_song_datas.push((entitled_name_formatted, entitled_content));
+                    let order_to_display = vec![
+                        "Title".to_string(),
+                        "Artist".to_string(),
+                    ];
+                    self.input_song_datas.sort_by_key(|(key, _)| {
+                        order_to_display
+                            .iter()
+                            .position(|x| x == key)
+                            .unwrap_or(usize::MAX)
+                    });
+                    self.song_infos_state.select(Some(0));
+                    self.mode = "modify_popup_songs".to_string();
                 }
-                self.song_infos_state.select(Some(0));
-                self.mode = "modify_popup_songs".to_string();
             }
             "add_song" => {
                 self.mode = "add_popup_songs".to_string();
@@ -455,32 +478,43 @@ impl App {
 
     // TODO: Revoir ça parce que c'est flou ce que ça fait ... (lu vite fait / en diagonale)
     fn modify_song(&mut self) {
-        if self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !") < self.songs_service.get_modify_song_infos().len() - 1 {
-            self.next();
-        } else {
-            let mut formatted_infos: Vec<(String, String)> = Vec::new();
-            for (title, content) in &self.input_song_datas {
-                match title.as_str() {
-                    "Title" => {
-                        formatted_infos.push(("TIT2".to_string(), content.to_string()));
-                    }
-                    "Artist" => {
-                        formatted_infos.push(("TPE1".to_string(), content.to_string()));
-                    }
-                    _default => {
-                        continue;
+        let selected_song = self.songs_service.get_selected_song();
+        if selected_song.is_some() {
+            let actual_modified_intitule = self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !");
+            let filepath = selected_song.clone()
+                .expect("Can't be a None value !")
+                .get("path")
+                .expect("Can't retrieve path of song file !")
+                .to_string();
+            let song_last_intitule = self.songs_service.get_modify_metadata(filepath).len() - 1;
+            if actual_modified_intitule < song_last_intitule {
+                self.next();
+            } else {
+                let mut formatted_infos: Vec<(String, String)> = Vec::new();
+                for (title, content) in &self.input_song_datas {
+                    match title.as_str() {
+                        "Title" => {
+                            formatted_infos.push(("TIT2".to_string(), content.to_string()));
+                        }
+                        "Artist" => {
+                            formatted_infos.push(("TPE1".to_string(), content.to_string()));
+                        }
+                        _default => {
+                            continue;
+                        }
                     }
                 }
-            }
 
-            // TODO: Mettre modifying_metadata dans songs_service plutot
-            api::modifying_metadata(
-                self.songs_service.get_all_songs()[
-                    self.songs_service.get_songs_state().expect("Can't retrieve active song id !")
-                ].get("path").expect("Can't retrieve path of song file !").to_string(),
-                &formatted_infos
-            );
-            self.next_mode();
+                self.songs_service.set_metadata(
+                    selected_song
+                        .expect("Can't be a None value !")
+                        .get("path")
+                        .expect("Can't retrieve path of song file !")
+                        .to_string(),
+                    &formatted_infos
+                );
+                self.next_mode();
+            }
         }
     }
 
@@ -494,24 +528,32 @@ impl App {
 
     // PLAYLISTS service needed SONGS service to retrieve active song to add to playlist
     fn toggle_playlists(&mut self) {
-        let song_path = self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")]
-            .get("path")
-            .expect("Can't retrieve path of the selected song !")
-            .to_string();
-        let selected_playlist = &self.playlists_service.get_all_playlists()[self.song_to_playlists_state.selected().expect("Can't be empty !")]
-            .playlist_name;
-        if selected_playlist != "All songs" {
-            self.playlists_service.toggle_playlists(song_path, selected_playlist);
+        let selected_song = self.songs_service.get_selected_song();
+        if selected_song.is_some() {
+            let song_path = selected_song
+                .expect("Can't be a None value !")
+                .get("path")
+                .expect("Can't retrieve path of the selected song !")
+                .to_string();
+            let selected_playlist = &self.playlists_service.get_all_playlists()[self.song_to_playlists_state.selected().expect("Can't be empty !")]
+                .playlist_name;
+            if selected_playlist != "All songs" {
+                self.playlists_service.toggle_playlists(song_path, selected_playlist);
+            }
         }
     }
 
     fn remove_or_not_song(&mut self) {
         if self.is_answer_positive {
-            let song_to_remove = self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")]
-                .get("path")
-                .expect("Can't retrieve path of the selected song !")
-                .to_string();
-            self.songs_service.remove_song(song_to_remove);
+            let selected_song = self.songs_service.get_selected_song();
+            if selected_song.is_some() {
+                let song_to_remove = selected_song
+                    .expect("Can't be a None value !")
+                    .get("path")
+                    .expect("Can't retrieve path of the selected song !")
+                    .to_string();
+                self.songs_service.remove_song(song_to_remove);
+            }
         }
         self.next_mode();
     }
@@ -524,11 +566,15 @@ impl App {
 
     // PLAYLISTS service needs SONGS service to retrieve active song and add it to 'Favorites' playlist
     fn set_favorites(&mut self) {
-        let path = self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Cannot be a None value !")]
-            .get("path")
-            .expect("Can't retrieve path of the selected song !")
-            .to_string();
-        self.playlists_service.toggle_playlists(path, &"Favorites".to_string());
+        let selected_song = self.songs_service.get_selected_song();
+        if selected_song.is_some() {
+            let path = selected_song
+                .expect("Can't be a None value !")
+                .get("path")
+                .expect("Can't retrieve path of the selected song !")
+                .to_string();
+            self.playlists_service.toggle_playlists(path, &"Favorites".to_string());
+        }
     }
 
     fn remove_char_from_input(&mut self) {
@@ -624,9 +670,9 @@ impl App {
 
         // Playlists AND Songs popup (Create/Modify/Delete AND Add)
         if self.mode.as_str().contains("popup") {
-            let popup_question: String;
-            let answers_type: &str;
-            let answer_height: Constraint;
+            let mut popup_question: String = String::from("");
+            let mut answers_type: &str = "";
+            let mut answer_height: Constraint = Constraint::Max(1);
 
             match self.mode.as_str() {
                 "add_popup_playlists" => {
@@ -650,14 +696,32 @@ impl App {
                     answer_height = Constraint::Max(2);
                 }
                 "add_popup_songs" => {
-                    popup_question = format!("In which playlist(s) do you want to add '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
-                    answers_type = "table";
-                    answer_height = Constraint::Max(3);
+                    let selected_song = self.songs_service.get_selected_song();
+                    if selected_song.is_some() {
+                        popup_question = format!(
+                            "In which playlist(s) do you want to add '{}' song ?",
+                            selected_song
+                                .expect("Can't be a None value !")
+                                .get("title")
+                                .expect("Can't have an empty title name song !")
+                        );
+                        answers_type = "table";
+                        answer_height = Constraint::Max(3);
+                    }
                 }
                 "remove_popup_songs" => {
-                    popup_question = format!("Do you really want to delete '{}' song ?", self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("title").expect("Can't have an empty title name song !"));
-                    answers_type = "binary";
-                    answer_height = Constraint::Max(1);
+                    let selected_song = self.songs_service.get_selected_song();
+                    if selected_song.is_some() {
+                        popup_question = format!(
+                            "Do you really want to delete '{}' song ?",
+                            selected_song
+                                .expect("Can't be a None value !")
+                                .get("title")
+                                .expect("Can't have an empty title name song !")
+                        );
+                        answers_type = "binary";
+                        answer_height = Constraint::Max(1);
+                    }
                 }
                 &_ => {
                     // Delete a random song (1/1000 chance)
@@ -722,15 +786,18 @@ impl App {
                     let mut playlists_datas: Vec<Row> = Vec::new();
                     let all_playlists = self.playlists_service.get_all_playlists();
                     for playlist in &all_playlists {
-                        let is_in_playlist = playlist.songs_list.contains(self.songs_service.get_all_songs()[self.songs_service.get_songs_state().expect("Can't retrieve active song id !")].get("path").expect("Can't retrieve path of song file !"));
-                        let checkbox: &str;
-                        if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
-                            checkbox = "[X]";
-                        } else { checkbox = "[ ]"; }
-                        playlists_datas.push(Row::new(vec![
-                            checkbox,
-                            &playlist.playlist_name
-                        ]));
+                        let selected_song = self.songs_service.get_selected_song();
+                        if selected_song.is_some() {
+                            let is_in_playlist = playlist.songs_list.contains(selected_song.expect("Can't be a None value !").get("path").expect("Can't retrieve path of song file !"));
+                            let checkbox: &str;
+                            if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
+                                checkbox = "[X]";
+                            } else { checkbox = "[ ]"; }
+                            playlists_datas.push(Row::new(vec![
+                                checkbox,
+                                &playlist.playlist_name
+                            ]));
+                        }
                     }
                     let selection_table = Table::new(
                         playlists_datas,
