@@ -1,9 +1,133 @@
+
+use id3::{Content, Frame as Id3Frame, Tag, TagLike, Version};
 use std::collections::HashMap;
 use std::fs::{self, File, read_to_string, remove_file};
 use std::io::{BufWriter, Write};
 
 use crate::api::{self, Playlist};
 use crate::settings;
+
+// TODO: Mettre dans un fichier de conf cette valeur car dupliquer dans download_api
+const OUTPUT_FILE_FORMAT: &str = "mp3";
+
+// Retrieve only metadata that can be modified
+pub fn get_modify_metadata(filepath: String) -> Vec<(String, String)> {
+	let mut metadata = Vec::new();
+	let song = get_all_metadata(filepath);
+
+	let song_entitled = ["TIT2", "TPE1"];
+	let mut song_value: &str;
+
+	for entitled_name in song_entitled {
+		match entitled_name {
+			"TIT2" => {
+				song_value = "title";
+			}
+			"TPE1" => {
+				song_value = "artist";
+			}
+			_default => {
+				continue;
+			}
+		}
+		metadata.push((entitled_name.to_string(), song.get(song_value).expect("Can't retrieve a specific value of a song !").to_string()));
+	}
+
+	metadata
+}
+
+// Retrieve all metadata of the song
+pub fn get_all_metadata(filepath: String) -> HashMap<String, String> {
+	let mut song_infos = HashMap::new();
+	let mut is_song = false;
+	
+	if filepath.contains(OUTPUT_FILE_FORMAT) {
+		let file = File::open(&filepath).expect("Unable to open file !");
+
+		if let Ok(tag) = Tag::read_from2(&file) {	
+			is_song = true;
+
+			// Default datas
+			song_infos.insert(String::from("path"), filepath.to_string());
+			song_infos.insert(String::from("title"), "Unknown".to_string());
+			song_infos.insert(String::from("artist"), "Unknown".to_string());
+			song_infos.insert(String::from("duration"), "0".to_string());
+			song_infos.insert(String::from("is_favorite"), "♡".to_string());
+			// A optimiser
+			song_infos.insert(String::from("is_normalized"), "false".to_string());
+			
+			for frame in tag.frames() {
+				let id = frame.id();
+			
+				match frame.content() {
+					Content::Text(value) => {
+						match id {
+							"TIT2" => {
+								song_infos.insert(String::from("title"), value.to_string());
+							}
+							"TPE1" => {
+								song_infos.insert(String::from("artist"), value.to_string());
+							}
+							"TNOB" => {
+								song_infos.insert(String::from("is_normalized"), value.to_string());
+							}
+							_default => {
+								continue;
+							}
+						}
+					}
+					_content => {
+						continue;
+					}
+				}
+			}
+
+			let seconds = api::get_audio_duration(&filepath);
+			song_infos.insert(String::from("duration"), seconds.to_string());
+
+			let playlists_content = read_to_string("playlists.json").expect("Can't read content of playlists.json file !");
+			let playlists: Vec<Playlist> = serde_json::from_str(&playlists_content)
+				.expect("Playlists JSON content is not well-formatted !");
+			for playlist in playlists {
+				if playlist.playlist_name == "Favorites" {
+					if playlist.songs_list.contains(&filepath) {
+						song_infos.insert(String::from("is_favorite"), "♥".to_string());
+					}
+					break;
+				}
+			}
+		}
+	}
+	song_infos.insert(String::from("is_song"), is_song.to_string());
+
+	song_infos
+}
+
+// Modify metadata of the song
+pub fn set_metadata(filepath: String, new_song_datas: &Vec<(String, String)>) {
+	let file = File::open(&filepath).expect("Unable to open file !");
+	let mut song = Tag::read_from2(&file).expect("Unable to get tags from file !");
+
+	for (name, content) in new_song_datas {
+		match name.as_str() {
+			"TIT2" => {
+				song.set_title(content.to_string());
+			}
+			"TPE1" => {
+				song.set_artist(content.to_string());
+			}
+			"TNOB" => {
+				song.add_frame(Id3Frame::text("TNOB", content.to_string()));
+			}
+			&_ => {
+				println!("{}, {}", name, content);
+				continue;
+			}
+		}
+	}
+
+	song.write_to_path(&filepath, Version::Id3v24).expect("Can't write metadata to the file");
+}
 
 // Remove the selected song
 pub fn remove_song(song_to_remove: String) {
@@ -46,7 +170,10 @@ pub fn get_all_songs(playlist_name: &String) -> Vec<HashMap<String, String>> {
 		for playlist in playlists {
 			if &playlist.playlist_name == playlist_name {
 				for song_path in songs_path {
-					let song_infos = api::get_song_infos_from_file(song_path.expect("Songs folder is empty !").path().to_str().expect("Unable to convert to str"));
+					let song_infos = get_all_metadata(song_path.expect("Songs folder is empty !")
+						.path().to_str().expect("Can't transform PathBuf to str !")
+						.to_string()
+					);
 					if song_infos.get("is_song").expect("Can't get is_song variable !") == "true" {
 						if playlist_name == "All songs" || playlist.songs_list.contains(song_infos.get("path").expect("Can't get path variable !")) {
 							songs.push(song_infos);

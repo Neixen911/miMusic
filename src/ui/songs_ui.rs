@@ -64,29 +64,22 @@ impl SongsService {
         self.songs_state.selected()
     }
 
-	pub fn get_modify_song_infos(&mut self) -> Vec<(String, String)> {
-		let mut song_infos = Vec::new();
-        let song = &self.get_all_songs()[self.get_songs_state().expect("Can't retrieve active song id !")];
+    pub fn get_selected_song(&mut self) -> Option<HashMap<String, String>> {
+        let i = self.get_songs_state();
+        let mut song = None;
+        if i.is_some() {
+            song = Some(self.get_all_songs()[i.expect("Cannot be a None value !")].clone())
+        }
 
-        let song_entitled = ["TIT2", "TPE1"];
-        let mut song_value: &str;
+        song
+    }
 
-		for entitled_name in song_entitled {
-            match entitled_name {
-                "TIT2" => {
-                    song_value = "title";
-                }
-                "TPE1" => {
-                    song_value = "artist";
-                }
-                _default => {
-                    continue;
-                }
-            }
-            song_infos.push((entitled_name.to_string(), song.get(song_value).expect("Can't retrieve a specific value of a song !").to_string()));
-		}
+    pub fn set_metadata(&mut self, filepath: String, new_song_datas: &Vec<(String, String)>) {
+        api::set_metadata(filepath, new_song_datas);
+    }
 
-		song_infos
+    pub fn get_modify_metadata(&mut self, filepath: String) -> Vec<(String, String)> {
+		api::get_modify_metadata(filepath)
 	}
 }
 
