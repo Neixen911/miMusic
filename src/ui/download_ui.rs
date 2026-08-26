@@ -53,9 +53,12 @@ impl DownloadService {
                         self.set_input("Installing librairies ...".to_string());
                     }
                     x if x == -3.0 => {
-                        self.set_input("Starting to fetch datas from YouTube URL ...".to_string());
+                        self.set_input("Checking internet connection ...".to_string());
                     }
                     x if x == -4.0 => {
+                        self.set_input("Starting to fetch datas from YouTube URL ...".to_string());
+                    }
+                    x if x == -5.0 => {
                         self.set_input("Check integrity and finalize ...".to_string());
                     }
                     x if x == -51.0 => {

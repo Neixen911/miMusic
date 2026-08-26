@@ -79,14 +79,8 @@ impl Service for PlayerService {
         }
     }
 
-    fn as_any(&mut self) -> &mut dyn Any { self }
-
     fn get_name(&self) -> &ServiceName {
         &self.service_name
-    }
-
-    fn update(&mut self) {
-        self.update_datas();
     }
 
     fn update(&mut self) {

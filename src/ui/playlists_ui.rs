@@ -86,13 +86,9 @@ impl Service for PlaylistsService {
         }
     }
 
-    fn as_any(&mut self) -> &mut dyn Any { self }
-
     fn get_name(&self) -> &ServiceName {
         &self.service_name
     }
-
-    fn update(&mut self) {}
 
     fn update(&mut self) {}
 

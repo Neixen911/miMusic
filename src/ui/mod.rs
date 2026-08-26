@@ -2,9 +2,6 @@ use ratatui::{
     layout::Rect,
     Frame
 };
-use std::any::{Any, TypeId};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 #[derive(Debug, PartialEq)]
 pub enum ServiceName {
@@ -19,7 +16,6 @@ pub trait Service {
     fn new(service_name: ServiceName) -> Self
     where
         Self: Sized;
-    fn as_any(&mut self) -> &mut dyn Any;
     fn get_name(&self) -> &ServiceName;
     fn update(&mut self)
     where
