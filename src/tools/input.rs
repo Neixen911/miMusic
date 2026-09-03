@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct InputTool {
     pub input: String,
     pub input_position: usize
@@ -13,6 +14,7 @@ impl InputTool {
 
     pub fn set_input(&mut self, new_input: String) {
         self.input = new_input;
+        self.input_position = 0;
     }
 
     pub fn get_input(&mut self) -> String {
