@@ -28,17 +28,12 @@ use crate::ui::{DownloadService, PlayerService, PlaylistsService, PopupState, Se
 async fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
     let mut app = App {
-        song_to_playlists_state: TableState::default().with_selected(0),
-        song_infos_state: TableState::default().with_selected(0),
         active_service: ServiceName::SONGS,
+        mode: PopupState::NONE,
         player_service: PlayerService::new(ServiceName::PLAYER),
         download_service: DownloadService::new(ServiceName::DOWNLOAD),
         playlists_service: PlaylistsService::new(ServiceName::PLAYLISTS),
         songs_service: SongsService::new(ServiceName::SONGS),
-        mode: "songs".to_string(),
-        mode_popup: PopupState::NONE,
-        input_song_datas: Vec::new(),
-        input_modify_playlists: InputTool::new("".to_string()),
         is_running: false,
     };
     let running_app = app.run(&mut terminal).await;
@@ -47,18 +42,12 @@ async fn main() -> io::Result<()> {
 }
 
 pub struct App {
-    // Reorganise & reduce this variables (is_running at the end, some variables can maybe get out ...)
-    song_to_playlists_state: TableState,
-    song_infos_state: TableState,
     active_service: ServiceName,
+    mode: PopupState,
     player_service: PlayerService,
     download_service: DownloadService,
     playlists_service: PlaylistsService,
     songs_service: SongsService,
-    mode: String,
-    mode_popup: PopupState,
-    input_song_datas: Vec<(String, String)>,
-    input_modify_playlists: InputTool,
     is_running: bool,
 }
 
@@ -101,7 +90,7 @@ impl App {
     async fn handle_events(&mut self) {
         match event::read().expect("Can't read events !") {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                if self.mode_popup == PopupState::NONE {
+                if self.mode == PopupState::NONE {
                     self.handle_main_events(key_event).await;
                 } else { self.handle_popup_events(key_event).await };
             }
@@ -111,10 +100,10 @@ impl App {
 
     // Match popups key event to dedicated service
     async fn handle_popup_events(&mut self, key_event: KeyEvent) {
-        let mode = &self.mode_popup;
+        let mode = &self.mode;
         match self.active_service {
             ServiceName::SONGS => {
-                match self.mode_popup {
+                match self.mode {
                     PopupState::ADD => {
                         match key_event.code {
                             KeyCode::Enter                  => { self.toggle_playlists(); },
@@ -186,7 +175,7 @@ impl App {
                 }
             },
             ServiceName::PLAYLISTS => {
-                match self.mode_popup {
+                match self.mode {
                     PopupState::ADD => {
                         match key_event.code {
                             KeyCode::Enter => {
@@ -324,15 +313,6 @@ impl App {
                     _                               => { self.playlists_service.handle_events(key_event); }
                 }
             }
-                // "modify_popup_songs" => {
-                //     match key_event.code {
-                //         KeyCode::Enter                  => { self.modify_song(); },
-                //         KeyCode::Backspace              => { self.remove_char_from_input(); },
-                //         KeyCode::Char(to_insert)        => { self.insert_char_into_input(to_insert); },
-                //         KeyCode::Esc                    => { self.next_mode(); }
-                //         _ => {}
-                //     }
-                // }
             _ => {}
         }
     }
@@ -386,119 +366,6 @@ impl App {
         }
     }
 
-    // Select next one in active table on key pressed
-    fn next(&mut self) {
-        match self.mode.as_str() {
-            "modify_popup_songs" => {
-                let i = match self.song_infos_state.selected() {
-                    Some(i) => {
-                        let filepath = self.songs_service.get_selected_song()
-                            .expect("Can't be a None value !")
-                            .get("path")
-                            .expect("Can't retrieve path of song file !")
-                            .to_string();
-                        if i >= self.songs_service.get_modify_metadata(filepath).len() - 1 {
-                            0
-                        } else {
-                            i + 1
-                        }
-                    }
-                    None => 0,
-                };
-                self.song_infos_state.select(Some(i));
-            }
-            &_ => {}
-        }
-    }
-
-    fn display_popup(&mut self, keyword: &str) {
-        let selected_playlist = &self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name;
-        match keyword {
-            "modify_song" => {
-                let selected_song = self.songs_service.get_selected_song();
-                if selected_song.is_some() {
-                    let filepath = selected_song
-                        .expect("Can't be a None value !")
-                        .get("path")
-                        .expect("Can't retrieve path of song file !")
-                        .to_string();
-                    let modify_song_infos = self.songs_service.get_modify_metadata(filepath);
-                    self.input_song_datas = Vec::new();
-                    for (entitled_name, entitled_content) in modify_song_infos {
-                        let entitled_name_formatted: String;
-                        match entitled_name.as_str() {
-                            "TIT2" => {
-                                entitled_name_formatted = "Title".to_string();
-                            }
-                            "TPE1" => {
-                                entitled_name_formatted = "Artist".to_string();
-                            }
-                            _default => {
-                                continue;
-                            }
-                        }
-                        self.input_song_datas.push((entitled_name_formatted, entitled_content));
-                    }
-                    let order_to_display = vec![
-                        "Title".to_string(),
-                        "Artist".to_string(),
-                    ];
-                    self.input_song_datas.sort_by_key(|(key, _)| {
-                        order_to_display
-                            .iter()
-                            .position(|x| x == key)
-                            .unwrap_or(usize::MAX)
-                    });
-                    self.song_infos_state.select(Some(0));
-                    self.mode = "modify_popup_songs".to_string();
-                }
-            }
-            &_ => {}
-        }
-    }
-
-    // TODO: Revoir ça parce que c'est flou ce que ça fait ... (lu vite fait / en diagonale)
-    fn modify_song(&mut self) {
-        let selected_song = self.songs_service.get_selected_song();
-        if selected_song.is_some() {
-            let actual_modified_intitule = self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !");
-            let filepath = selected_song.clone()
-                .expect("Can't be a None value !")
-                .get("path")
-                .expect("Can't retrieve path of song file !")
-                .to_string();
-            let song_last_intitule = self.songs_service.get_modify_metadata(filepath).len() - 1;
-            if actual_modified_intitule < song_last_intitule {
-                self.next();
-            } else {
-                let mut formatted_infos: Vec<(String, String)> = Vec::new();
-                for (title, content) in &self.input_song_datas {
-                    match title.as_str() {
-                        "Title" => {
-                            formatted_infos.push(("TIT2".to_string(), content.to_string()));
-                        }
-                        "Artist" => {
-                            formatted_infos.push(("TPE1".to_string(), content.to_string()));
-                        }
-                        _default => {
-                            continue;
-                        }
-                    }
-                }
-
-                self.songs_service.set_metadata(
-                    selected_song
-                        .expect("Can't be a None value !")
-                        .get("path")
-                        .expect("Can't retrieve path of song file !")
-                        .to_string(),
-                    &formatted_infos
-                );
-                // self.next_mode();
-            }
-        }
-    }
-
     // PLAYLISTS service needed SONGS service to retrieve active song to add to playlist
     fn toggle_playlists(&mut self) {
         let selected_song = self.songs_service.get_selected_song();
@@ -528,30 +395,12 @@ impl App {
         }
     }
 
-    fn remove_char_from_input(&mut self) {
-        match self.mode.as_str() {
-            "modify_popup_songs" => {
-                self.input_song_datas[self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !")].1.pop();
-            }
-            &_ => {}
-        }
-    }
-
-    fn insert_char_into_input(&mut self, new_char: char) {
-        match self.mode.as_str() {
-            "modify_popup_songs" => {
-                self.input_song_datas[self.song_infos_state.selected().expect("Can't retrieve actual id of selected song !")].1.push_str(&new_char.to_string());
-            }
-            &_ => {}
-        }
-    }
-
     fn set_mode(&mut self, new_mode: PopupState) {
-        self.mode_popup = new_mode;
+        self.mode = new_mode;
     }
 
     fn render_popups(&mut self, frame: &mut Frame) {
-        let mode = &self.mode_popup;
+        let mode = &self.mode;
         match self.active_service {
             ServiceName::PLAYER         => { self.player_service.render_popups(frame, mode); },
             ServiceName::DOWNLOAD       => { self.download_service.render_popups(frame, mode); },
@@ -596,206 +445,45 @@ impl App {
         self.render_popups(frame);
 
         // Hotkeys section
-        let hotkeys_text: &str;
-        match self.mode.as_str() {
-            "songs" => {
-                hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
-            }
-            "playing" => {
-                hotkeys_text = "Play/Pause <Space> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Shuffle <Backtab> - Loop <T> - Switch Mode <Tab> - Quit <Q>";
-            }
-            "download" => {
-                hotkeys_text = "Navigate <Left/Right> - Download <Enter> - Switch Mode <Tab>";
-            }
-            "playlists" => {
-                hotkeys_text = "Navigate <Up/Down> - Select <Enter> - All songs to queue <Backtab> - New <A> - Modify <M> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
-            }
-            "add_popup_playlists" => {
-                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
-            }
-            "modify_popup_playlists" => {
-                hotkeys_text = "Modify <Enter> - Close <Esc>";
-            }
-            "remove_popup_playlists" => {
-                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
-            }
-            "modify_popup_songs" => {
-                hotkeys_text = "Modify <Enter> - Close <Esc>";
-            }
-            "add_popup_songs" => {
-                hotkeys_text = "Navigate <Up/Down> - Add <Enter> - Close <Esc>";
-            }
-            "remove_popup_songs" => {
-                hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
-            }
-            &_ => {
-                hotkeys_text = "";
-            }
-        }
-        let hotkeys_section = Block::default()
-            .title(Line::from(hotkeys_text).centered());
-        frame.render_widget(hotkeys_section, hotkeys);
-
-        // Playlists AND Songs popup (Create/Modify/Delete AND Add)
-        // if self.mode.as_str().contains("popup") {
-        //     let mut popup_question: String = String::from("");
-        //     let mut answers_type: &str = "";
-        //     let mut answer_height: Constraint = Constraint::Max(1);
-
-        //     match self.mode.as_str() {
-        //         "add_popup_playlists" => {
-        //             popup_question = format!("Do you want to add a new playlist ?");
-        //             answers_type = "binary";
-        //             answer_height = Constraint::Max(1);
-        //         }
-        //         "modify_popup_playlists" => {
-        //             popup_question = format!("What's the new name of the selected playlist ?");
-        //             answers_type = "input";
-        //             answer_height = Constraint::Max(1);
-        //         }
-        //         "remove_popup_playlists" => {
-        //             popup_question = format!("Do you really want to delete '{}' playlist ?", self.playlists_service.get_all_playlists()[self.playlists_service.get_playlists_state()].playlist_name);
-        //             answers_type = "binary";
-        //             answer_height = Constraint::Max(1);
-        //         }
-        //         "modify_popup_songs" => {
-        //             popup_question = format!("What is the new informations of this song ?");
-        //             answers_type = "inputs_table";
-        //             answer_height = Constraint::Max(2);
-        //         }
-        //         "add_popup_songs" => {
-        //             let selected_song = self.songs_service.get_selected_song();
-        //             if selected_song.is_some() {
-        //                 popup_question = format!(
-        //                     "In which playlist(s) do you want to add '{}' song ?",
-        //                     selected_song
-        //                         .expect("Can't be a None value !")
-        //                         .get("title")
-        //                         .expect("Can't have an empty title name song !")
-        //                 );
-        //                 answers_type = "table";
-        //                 answer_height = Constraint::Max(3);
-        //             }
-        //         }
-        //         "remove_popup_songs" => {
-        //             let selected_song = self.songs_service.get_selected_song();
-        //             if selected_song.is_some() {
-        //                 popup_question = format!(
-        //                     "Do you really want to delete '{}' song ?",
-        //                     selected_song
-        //                         .expect("Can't be a None value !")
-        //                         .get("title")
-        //                         .expect("Can't have an empty title name song !")
-        //                 );
-        //                 answers_type = "binary";
-        //                 answer_height = Constraint::Max(1);
-        //             }
-        //         }
-        //         &_ => {
-        //             // Delete a random song (1/1000 chance)
-        //             popup_question = format!("Bro, no question here. Just you and me. Choose and good luck !");
-        //             answers_type = "binary";
-        //             answer_height = Constraint::Max(1);
-        //         }
+        // let hotkeys_text: &str;
+        // match self.mode.as_str() {
+        //     "songs" => {
+        //         hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
         //     }
-        //     let popup = frame.area();
-
-        //     let vertical = Layout::vertical([Constraint::Length(12)]).flex(Flex::Center);
-        //     let horizontal = Layout::horizontal([Constraint::Length(50)]).flex(Flex::Center);
-        //     let [popup] = vertical.areas(popup);
-        //     let [popup] = horizontal.areas(popup);
-
-        //     let chunks = Layout::vertical([
-        //         Constraint::Max(2),                 // Question's popup
-        //         answer_height,                      // Binary answers OR Input text answer OR Selection table
-        //     ])
-        //     .vertical_margin(3)
-        //     .horizontal_margin(8)
-        //     .flex(Flex::SpaceBetween)
-        //     .split(popup);
-
-        //     frame.render_widget(Clear, popup);
-
-        //     let popup_block = Block::bordered();
-        //     frame.render_widget(popup_block, popup);
-
-        //     let popup_question = Line::from(popup_question).alignment(Alignment::Center);
-        //     frame.render_widget(Paragraph::new(popup_question).wrap(Wrap { trim: true }), chunks[0]);
-
-        //     match answers_type {
-        //         "binary" => {
-        //             let positive_answer = "Yes";
-        //             let negative_answer = "No";
-
-        //             let answers = Layout::horizontal([
-        //                 Constraint::Length(3 + 4),
-        //                 Constraint::Length(2 + 4),
-        //             ])
-        //             .flex(Flex::SpaceBetween)
-        //             .split(chunks[1]);
-
-        //             let popup_positive_answer = Line::from(positive_answer).alignment(Alignment::Center);
-        //             let popup_negative_answer = Line::from(negative_answer).alignment(Alignment::Center);
-        //             let popup_positive_answer_style = if self.is_answer_positive {Color::Magenta} else {Color::Reset};
-        //             let popup_negative_answer_style = if !self.is_answer_positive {Color::Magenta} else {Color::Reset};
-
-        //             frame.render_widget(Paragraph::new(popup_positive_answer)
-        //                 .style(Style::default().bg(popup_positive_answer_style)), answers[0]);
-        //             frame.render_widget(Paragraph::new(popup_negative_answer)
-        //                 .style(Style::default().bg(popup_negative_answer_style)), answers[1]);
-        //         }
-        //         "input" => {
-        //             let input_modify_playlists_value = self.input_modify_playlists.get_input();
-        //             let popup_input_answer = Line::from(input_modify_playlists_value.as_str()).alignment(Alignment::Center);
-        //             frame.render_widget(Paragraph::new(popup_input_answer)
-        //                 .style(Style::default().bg(Color::Magenta).fg(Color::White)), chunks[1]);
-        //         }
-        //         "table" => {
-        //             let mut playlists_datas: Vec<Row> = Vec::new();
-        //             let all_playlists = self.playlists_service.get_all_playlists();
-        //             for playlist in &all_playlists {
-        //                 let selected_song = self.songs_service.get_selected_song();
-        //                 if selected_song.is_some() {
-        //                     let is_in_playlist = playlist.songs_list.contains(selected_song.expect("Can't be a None value !").get("path").expect("Can't retrieve path of song file !"));
-        //                     let checkbox: &str;
-        //                     if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
-        //                         checkbox = "[X]";
-        //                     } else { checkbox = "[ ]"; }
-        //                     playlists_datas.push(Row::new(vec![
-        //                         checkbox,
-        //                         &playlist.playlist_name
-        //                     ]));
-        //                 }
-        //             }
-        //             let selection_table = Table::new(
-        //                 playlists_datas,
-        //                 [
-        //                     Constraint::Length(3),              // Selection box
-        //                     Constraint::Fill(1),                // Playlist name
-        //                 ])
-        //                 .row_highlight_style(Style::default().bg(Color::Magenta).fg(Color::White));
-        //             frame.render_stateful_widget(selection_table, chunks[1], &mut self.song_to_playlists_state);
-        //         }
-        //         "inputs_table" => {
-        //             let mut song_datas: Vec<Row> = Vec::new();
-        //             for (name, content) in &self.input_song_datas {
-        //                 song_datas.push(Row::new(vec![
-        //                     Cell::from(format!("{}:", name)), 
-        //                     Cell::from(Text::from(content.to_string()).alignment(TableAlignment::Right))
-        //                 ]))
-        //             }
-        //             let modify_table = Table::new(
-        //                 song_datas,
-        //                 [
-        //                     Constraint::Length(8),              // Entitled name
-        //                     Constraint::Fill(1),                // Entitled's content
-        //                 ])
-        //                 .row_highlight_style(Style::default().bg(Color::Magenta).fg(Color::White));
-        //             frame.render_stateful_widget(modify_table, chunks[1], &mut self.song_infos_state);
-        //         }
-        //         &_ => {}
+        //     "playing" => {
+        //         hotkeys_text = "Play/Pause <Space> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Shuffle <Backtab> - Loop <T> - Switch Mode <Tab> - Quit <Q>";
+        //     }
+        //     "download" => {
+        //         hotkeys_text = "Navigate <Left/Right> - Download <Enter> - Switch Mode <Tab>";
+        //     }
+        //     "playlists" => {
+        //         hotkeys_text = "Navigate <Up/Down> - Select <Enter> - All songs to queue <Backtab> - New <A> - Modify <M> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
+        //     }
+        //     "add_popup_playlists" => {
+        //         hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
+        //     }
+        //     "modify_popup_playlists" => {
+        //         hotkeys_text = "Modify <Enter> - Close <Esc>";
+        //     }
+        //     "remove_popup_playlists" => {
+        //         hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
+        //     }
+        //     "modify_popup_songs" => {
+        //         hotkeys_text = "Modify <Enter> - Close <Esc>";
+        //     }
+        //     "add_popup_songs" => {
+        //         hotkeys_text = "Navigate <Up/Down> - Add <Enter> - Close <Esc>";
+        //     }
+        //     "remove_popup_songs" => {
+        //         hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
+        //     }
+        //     &_ => {
+        //         hotkeys_text = "";
         //     }
         // }
+        // let hotkeys_section = Block::default()
+        //     .title(Line::from(hotkeys_text).centered());
+        // frame.render_widget(hotkeys_section, hotkeys);
     }
 
     // Exit the app on key pressed
