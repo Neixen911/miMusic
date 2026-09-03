@@ -1,4 +1,5 @@
 use ratatui::{
+    crossterm::event::{KeyCode, KeyEvent},
     layout::{Constraint, Rect},
     prelude::{Alignment},
     style::{Color, Style},
@@ -8,15 +9,19 @@ use ratatui::{
 };
 use std::collections::HashMap;
 
-use crate::{Service, ServiceName};
-use crate::api;
+use crate::api::{self, Playlist};
 use crate::settings;
+use crate::tools::{Answer, PopupTool};
+use crate::ui::{PopupState, Service, ServiceName};
 
 pub struct SongsService {
     service_name: ServiceName,
     songs_state: TableState,
     // TODO: Retirer active_playlist d'ici et de Playlists service, puis gérer ça dans playlists.json avec clé/valeur
     pub active_playlist: String,
+    add_popup: PopupTool,
+    modify_popup: PopupTool,
+    delete_popup: PopupTool
 }
 
 impl SongsService {
@@ -81,6 +86,34 @@ impl SongsService {
     pub fn get_modify_metadata(&mut self, filepath: String) -> Vec<(String, String)> {
 		api::get_modify_metadata(filepath)
 	}
+
+    pub fn set_add_popup(&mut self, song: HashMap<String, String>) {
+        let song_name = song.get("title").expect("Can't retrieve title of song !").to_string();
+        let question = format!("In which playlist(s) do you want to add '{}' song ?", song_name);
+        self.add_popup = PopupTool::new(question, Answer::TABLE(song));
+    }
+
+    pub fn get_add_popup(&mut self) -> &mut PopupTool {
+        &mut self.add_popup
+    }
+
+    pub fn set_modify_popup(&mut self, song_infos: Vec<(String, String)>) {
+        let question = format!("What is the new informations of this song ?");
+        self.modify_popup = PopupTool::new(question, Answer::TABLEINPUTS(song_infos));
+    }
+
+    pub fn get_modify_popup(&mut self) -> &mut PopupTool {
+        &mut self.modify_popup
+    }
+
+    pub fn set_delete_popup(&mut self, song_to_delete: &String) {
+        let question = format!("Do you really want to delete '{}' song ?", song_to_delete);
+        self.delete_popup = PopupTool::new(question, Answer::BINARY(String::from("Yes"), String::from("No")));
+    }
+
+    pub fn get_delete_popup(&mut self) -> &mut PopupTool {
+        &mut self.delete_popup
+    }
 }
 
 impl Service for SongsService {
@@ -89,6 +122,9 @@ impl Service for SongsService {
             service_name: service_name,
             songs_state: TableState::default().with_selected(0),
             active_playlist: "All songs".to_string(),
+            add_popup: PopupTool::new(format!("In which playlist(s) do you want to add this song ?"), Answer::TABLE(HashMap::new())),
+            modify_popup: PopupTool::new(format!("What is the new informations of this song ?"), Answer::TABLEINPUTS(Vec::new())),
+            delete_popup: PopupTool::new(format!("Do you really want to delete this song ?"), Answer::BINARY(String::from("Yes"), String::from("No")))
         }
     }
 
@@ -96,7 +132,33 @@ impl Service for SongsService {
         &self.service_name
     }
 
+    fn handle_popup_events(&mut self, key_event: KeyEvent, mode: &PopupState) {
+        match mode {
+            &PopupState::ADD                => { self.add_popup.handle_popup_events(key_event); },
+            &PopupState::MODIFY             => { self.modify_popup.handle_popup_events(key_event); },
+            &PopupState::DELETE             => { self.delete_popup.handle_popup_events(key_event); },
+            _ => {}
+        }
+    }
+
+    fn handle_events(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Up                     => { self.previous(); },
+            KeyCode::Down                   => { self.next(); },
+            _ => {}
+        }
+    }
+
     fn update(&mut self) {}
+
+    fn render_popups(&mut self, frame: &mut Frame, mode: &PopupState) {
+        match mode {
+            &PopupState::ADD                => { self.add_popup.render(frame); },
+            &PopupState::MODIFY             => { self.modify_popup.render(frame); },
+            &PopupState::DELETE             => { self.delete_popup.render(frame); },
+            _ => {}
+        }
+    }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let mut songs_datas: Vec<Row> = Vec::new();
@@ -134,5 +196,47 @@ impl Service for SongsService {
             .row_highlight_style(Style::default().fg(Color::Magenta))
             .highlight_symbol(Text::from(vec![" █ ".into()]));
         frame.render_stateful_widget(songs_table, area, &mut self.songs_state);
+
+        // Popups gestion
+        // match self.mode {
+        //     SongsPopup::ADD => {
+        //         if let Some(playlist_service_result) = registry.get_service::<PlaylistsService>() {
+        //             let mut playlist_service_global = playlist_service_result.lock().unwrap();
+        //             let playlist_service = playlist_service_global.as_any().downcast_mut::<PlaylistsService>().unwrap();
+        //             let selected_song_result = self.get_selected_song();
+        //             if selected_song_result.is_some() {
+        //                 let selected_song = selected_song_result.expect("Can't retrieve selected song !");
+        //                 let popup_question = format!(
+        //                     "In which playlist(s) do you want to add '{}' song ?",
+        //                     selected_song.get("title").expect("Can't have an empty title name song !")
+        //                 );
+        //                 let mut playlists_datas: Vec<(String, String)> = Vec::new();
+        //                 for playlist in playlist_service.get_all_playlists() {
+        //                     let is_in_playlist = playlist.songs_list.contains(selected_song.get("path").expect("Can't retrieve path of song file !"));
+        //                     let checkbox: &str;
+        //                     if is_in_playlist || playlist.playlist_name == "All songs".to_string() {
+        //                         checkbox = "[X]";
+        //                     } else { checkbox = "[ ]"; }
+        //                     playlists_datas.push((
+        //                         checkbox.to_string(),
+        //                         playlist.playlist_name.clone()
+        //                     ));
+        //                 }
+        //                 let mut popup = PopupTool::new(
+        //                     popup_question,
+        //                     Answer::TABLE(playlists_datas)
+        //                 );
+        //                 popup.render(frame);
+        //             }
+        //         }
+        //     },
+        //     SongsPopup::MODIFY => {
+
+        //     },
+        //     SongsPopup::DELETE => {
+
+        //     },
+        //     _ => {}
+        // }
     }
 }
