@@ -9,11 +9,9 @@ mod tools;
 use dotenv::dotenv;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
-    layout::{Alignment as TableAlignment, Constraint, Flex, Layout},
-    prelude::{Alignment},
-    style::{Color, Style},
-    text::{Line, Text},
-    widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
+    layout::{Constraint, Layout},
+    text::Line,
+    widgets::Block,
     DefaultTerminal, Frame,
 };
 use std::fs::{self, File, read_to_string};
@@ -21,7 +19,6 @@ use std::io::{self, BufWriter, Write};
 use std::time::{Duration, Instant};
 use tokio;
 
-use crate::tools::InputTool;
 use crate::ui::{DownloadService, PlayerService, PlaylistsService, PopupState, Service, ServiceName, SongsService};
 
 #[tokio::main]
@@ -218,7 +215,6 @@ impl App {
                     _ => {}
                 }
             }
-            _ => {}
         }
         
         match key_event.code {
@@ -313,7 +309,6 @@ impl App {
                     _                               => { self.playlists_service.handle_events(key_event); }
                 }
             }
-            _ => {}
         }
     }
 
@@ -406,7 +401,6 @@ impl App {
             ServiceName::DOWNLOAD       => { self.download_service.render_popups(frame, mode); },
             ServiceName::PLAYLISTS      => { self.playlists_service.render_popups(frame, mode); },
             ServiceName::SONGS          => { self.songs_service.render_popups(frame, mode); },
-            _ => {}
         }
     }
 
@@ -445,45 +439,17 @@ impl App {
         self.render_popups(frame);
 
         // Hotkeys section
-        // let hotkeys_text: &str;
-        // match self.mode.as_str() {
-        //     "songs" => {
-        //         hotkeys_text = "Navigate <Up/Down> - Play <Enter> - Modify <M> - Like/Unlike <L> - Add to playlist <A> - Delete <Suppr> - Switch Mode <Tab> - Quit <Q>";
-        //     }
-        //     "playing" => {
-        //         hotkeys_text = "Play/Pause <Space> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Shuffle <Backtab> - Loop <T> - Switch Mode <Tab> - Quit <Q>";
-        //     }
-        //     "download" => {
-        //         hotkeys_text = "Navigate <Left/Right> - Download <Enter> - Switch Mode <Tab>";
-        //     }
-        //     "playlists" => {
-        //         hotkeys_text = "Navigate <Up/Down> - Select <Enter> - All songs to queue <Backtab> - New <A> - Modify <M> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>";
-        //     }
-        //     "add_popup_playlists" => {
-        //         hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
-        //     }
-        //     "modify_popup_playlists" => {
-        //         hotkeys_text = "Modify <Enter> - Close <Esc>";
-        //     }
-        //     "remove_popup_playlists" => {
-        //         hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
-        //     }
-        //     "modify_popup_songs" => {
-        //         hotkeys_text = "Modify <Enter> - Close <Esc>";
-        //     }
-        //     "add_popup_songs" => {
-        //         hotkeys_text = "Navigate <Up/Down> - Add <Enter> - Close <Esc>";
-        //     }
-        //     "remove_popup_songs" => {
-        //         hotkeys_text = "Switch Answer <Tab> - Select <Enter> - Close <Esc>";
-        //     }
-        //     &_ => {
-        //         hotkeys_text = "";
-        //     }
-        // }
-        // let hotkeys_section = Block::default()
-        //     .title(Line::from(hotkeys_text).centered());
-        // frame.render_widget(hotkeys_section, hotkeys);
+        let hotkeys_text: String;
+        let mode = &self.mode;
+        match self.active_service {
+            ServiceName::PLAYER         => { hotkeys_text = self.player_service.get_hotkeys(mode); },
+            ServiceName::DOWNLOAD       => { hotkeys_text = self.download_service.get_hotkeys(mode); },
+            ServiceName::PLAYLISTS      => { hotkeys_text = self.playlists_service.get_hotkeys(mode); },
+            ServiceName::SONGS          => { hotkeys_text = self.songs_service.get_hotkeys(mode); },
+        }
+        let hotkeys_section = Block::default()
+            .title(Line::from(hotkeys_text).centered());
+        frame.render_widget(hotkeys_section, hotkeys);
     }
 
     // Exit the app on key pressed

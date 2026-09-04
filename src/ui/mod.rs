@@ -6,7 +6,6 @@ use ratatui::{
 
 #[derive(Debug, PartialEq)]
 pub enum ServiceName {
-    NONE,
     PLAYER,
     DOWNLOAD,
     SONGS,
@@ -30,6 +29,9 @@ pub trait Service {
     where
         Self: Sized;
     fn handle_events(&mut self, key_event: KeyEvent)
+    where
+        Self: Sized;
+    fn get_hotkeys(&mut self, mode: &PopupState) -> String
     where
         Self: Sized;
     fn update(&mut self)

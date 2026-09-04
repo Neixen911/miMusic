@@ -140,6 +140,15 @@ impl Service for PlaylistsService {
         }
     }
 
+    fn get_hotkeys(&mut self, mode: &PopupState) -> String {
+        match mode {
+            &PopupState::ADD => { String::from("Switch Answer <Tab> - Select <Enter> - Close <Esc>") },
+            &PopupState::MODIFY => { String::from("Modify <Enter> - Close <Esc>") },
+            &PopupState::DELETE => { String::from("Switch Answer <Tab> - Select <Enter> - Close <Esc>") },
+            _ => { String::from("Navigate <Up/Down> - Select <Enter> - All songs to queue <Backtab> - New <A> - Modify <M> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>") }
+        }
+    }
+
     fn update(&mut self) {}
 
     fn render_popups(&mut self, frame: &mut Frame, mode: &PopupState) {

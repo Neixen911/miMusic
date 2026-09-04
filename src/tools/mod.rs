@@ -1,5 +1,3 @@
-pub trait Tool {}
-
 pub mod input;
 pub mod popup;
 

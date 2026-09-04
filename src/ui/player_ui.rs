@@ -84,9 +84,7 @@ impl Service for PlayerService {
         &self.service_name
     }
 
-    fn handle_popup_events(&mut self, key_event: KeyEvent, mode: &PopupState) {
-        
-    }
+    fn handle_popup_events(&mut self, _key_event: KeyEvent, _mode: &PopupState) {}
 
     fn handle_events(&mut self, key_event: KeyEvent) {
         match key_event.code {
@@ -101,13 +99,15 @@ impl Service for PlayerService {
         }
     }
 
+    fn get_hotkeys(&mut self, _mode: &PopupState) -> String {
+        String::from("Play/Pause <Space> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Shuffle <Backtab> - Loop <T> - Switch Mode <Tab> - Quit <Q>")
+    }
+
     fn update(&mut self) {
         self.update_datas();
     }
 
-    fn render_popups(&mut self, frame: &mut Frame, mode: &PopupState) {
-        
-    }
+    fn render_popups(&mut self, _frame: &mut Frame, _mode: &PopupState) {}
 
     fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let chunks = Layout::vertical([

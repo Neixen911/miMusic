@@ -8,9 +8,8 @@ use ratatui::{
     Frame
 };
 use std::collections::HashMap;
-use std::rc::Rc;
 
-use crate::api::{self, Playlist};
+use crate::api;
 use crate::tools::InputTool;
 
 #[derive(Clone, Debug)]
@@ -25,11 +24,11 @@ fn get_first(answer: &Answer) -> String {
     match answer {
         Answer::BINARY(..)             => return String::from(""),
         Answer::INPUT(_)               => return String::from(""),
-        Answer::TABLE(x)               => return String::from(""),
+        Answer::TABLE(_)               => return String::from(""),
         Answer::TABLEINPUTS(x) => {
             let first_value = x.first();
             if first_value.is_some() {
-                let (name, content) = first_value.expect("Can't first value not be retrieved !");
+                let (_name, content) = first_value.expect("Can't first value not be retrieved !");
                 return String::from(content)
             } else {
                 return String::from("")
@@ -96,7 +95,7 @@ impl PopupTool {
                     None => 0,
                 };
                 self.state.select(Some(i));
-                for (index, (name, content)) in song_infos.clone().iter().enumerate() {
+                for (index, (_name, content)) in song_infos.clone().iter().enumerate() {
                     if self.state.selected() == Some(index) {
                         self.set_input(content.to_string());
                     }
@@ -109,7 +108,7 @@ impl PopupTool {
 
     pub fn previous(&mut self) {
         match &self.answers {
-            Answer::TABLE(song) => {
+            Answer::TABLE(_song) => {
                 let i = match self.state.selected() {
                     Some(i) => {
                         if i == 0 {
@@ -153,14 +152,10 @@ impl PopupTool {
         self.is_answer_positive
     }
 
-    pub fn set_answers(&mut self, new_value: Answer) {
-        self.answers = new_value;
-    }
-
     pub fn get_answer(&mut self) -> String {
         let mut result = String::from("");
         match &self.answers {
-            Answer::TABLE(song) => {
+            Answer::TABLE(_song) => {
                 if self.state.selected().is_some() {
                     let playlists = api::get_all_playlists();
                     let playlist_name = playlists[self.state.selected().expect("Can't retrieve selected id !")].playlist_name.clone();
@@ -225,7 +220,7 @@ impl PopupTool {
                 frame.render_widget(Paragraph::new(popup_negative_answer)
                     .style(Style::default().bg(popup_negative_answer_style)), answers_layout[1]);
             },
-            Answer::INPUT(x) => {
+            Answer::INPUT(_x) => {
                 let input_value = self.get_input_tool().get_input();
                 let popup_input_answer = Line::from(input_value.as_str()).alignment(Alignment::Center);
                 frame.render_widget(Paragraph::new(popup_input_answer)
@@ -289,7 +284,6 @@ impl PopupTool {
                         .unwrap_or(usize::MAX)
                 });
                 let mut song_datas: Vec<Row> = Vec::new();
-                let mut first = true;
                 for (index, (name, content)) in datas.iter().enumerate() {
                     if self.state.selected() == Some(index) {
                         let input_value = self.get_input_tool().get_input();
@@ -317,7 +311,6 @@ impl PopupTool {
                     .row_highlight_style(Style::default().bg(Color::Magenta).fg(Color::White));
                 frame.render_stateful_widget(popup, chunks, &mut self.state);
             }
-            _ => {}
         }
     }
 
