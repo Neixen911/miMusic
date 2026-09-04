@@ -4,7 +4,7 @@ use std::io::{BufWriter, Write};
 
 use crate::settings;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct Playlist {
 	pub playlist_name: String,
     pub songs_list: Vec<String>,

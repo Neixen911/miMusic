@@ -1,4 +1,5 @@
 use ratatui::{
+    crossterm::event::{KeyCode, KeyEvent},
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
@@ -7,8 +8,8 @@ use ratatui::{
 };
 use rodio::{OutputStream, OutputStreamBuilder, Sink};
 
-use super::{Service, ServiceName};
 use crate::api;
+use crate::ui::{PopupState, Service, ServiceName};
 
 pub struct PlayerService {
     pub service_name: ServiceName,
@@ -83,9 +84,30 @@ impl Service for PlayerService {
         &self.service_name
     }
 
+    fn handle_popup_events(&mut self, _key_event: KeyEvent, _mode: &PopupState) {}
+
+    fn handle_events(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Char(' ')              => { self.pause_play_song(); },
+            KeyCode::Up                     => { self.increment_volume(); },
+            KeyCode::Down                   => { self.decrement_volume(); },
+            KeyCode::Char('t')              => { self.next_songs_loop(); },
+            KeyCode::BackTab                => { self.shuffle_queue(); },
+            KeyCode::Left                   => { self.skip_song(2); },
+            KeyCode::Right                  => { self.skip_song(1); },
+            _ => {}
+        }
+    }
+
+    fn get_hotkeys(&mut self, _mode: &PopupState) -> String {
+        String::from("Play/Pause <Space> - Previous <Left> - Skip <Right> - Volume <Up/Down> - Shuffle <Backtab> - Loop <T> - Switch Mode <Tab> - Quit <Q>")
+    }
+
     fn update(&mut self) {
         self.update_datas();
     }
+
+    fn render_popups(&mut self, _frame: &mut Frame, _mode: &PopupState) {}
 
     fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let chunks = Layout::vertical([

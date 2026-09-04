@@ -1,4 +1,5 @@
 use ratatui::{
+    crossterm::event::{KeyCode, KeyEvent},
     layout::{Constraint, Rect},
     style::{Color, Style},
     text::{Line, Text},
@@ -6,13 +7,17 @@ use ratatui::{
     Frame
 };
 
-use crate::{Service, ServiceName};
 use crate::api::{self, Playlist};
+use crate::tools::{Answer, PopupTool};
+use crate::ui::{PopupState, Service, ServiceName};
 
 pub struct PlaylistsService {
     service_name: ServiceName,
     active_playlist: String,
-    playlists_state: TableState
+    playlists_state: TableState,
+    add_popup: PopupTool,
+    modify_popup: PopupTool,
+    delete_popup: PopupTool
 }
 
 impl PlaylistsService {
@@ -71,8 +76,33 @@ impl PlaylistsService {
         self.playlists_state.selected().expect("Can't retrieve active playlist selected id !")
     }
 
+    pub fn get_selected_playlist(&mut self) -> String {
+        self.get_all_playlists()[self.get_playlists_state()].playlist_name.clone()
+    }
+
     pub fn get_all_playlists(&mut self) -> Vec<Playlist> {
         api::get_all_playlists()
+    }
+
+    pub fn get_add_popup(&mut self) -> PopupTool {
+        self.add_popup.clone()
+    }
+
+    pub fn set_modify_popup(&mut self, playlist_to_modify: &String) {
+        self.modify_popup.set_input(String::from(playlist_to_modify));
+    }
+
+    pub fn get_modify_popup(&mut self) -> &mut PopupTool {
+        &mut self.modify_popup
+    }
+
+    pub fn set_delete_popup(&mut self, playlist_to_delete: &String) {
+        let question = format!("Do you really want to delete '{}' playlist ?", playlist_to_delete);
+        self.delete_popup = PopupTool::new(question, Answer::BINARY(String::from("Yes"), String::from("No")));
+    }
+
+    pub fn get_delete_popup(&mut self) -> PopupTool {
+        self.delete_popup.clone()
     }
 }
 
@@ -82,6 +112,9 @@ impl Service for PlaylistsService {
             service_name: service_name,
             active_playlist: "All songs".to_string(),
             playlists_state: TableState::default().with_selected(0),
+            add_popup: PopupTool::new(format!("Do you want to add a new playlist ?"), Answer::BINARY(String::from("Yes"), String::from("No"))),
+            modify_popup: PopupTool::new(format!("What's the new name of the selected playlist ?"), Answer::INPUT(String::from("Playlist"))),
+            delete_popup: PopupTool::new(format!("Do you really want to delete this playlist ?"), Answer::BINARY(String::from("Yes"), String::from("No")))
         }
     }
 
@@ -89,7 +122,43 @@ impl Service for PlaylistsService {
         &self.service_name
     }
 
+    fn handle_popup_events(&mut self, key_event: KeyEvent, mode: &PopupState) {
+        match mode {
+            &PopupState::ADD                => { self.add_popup.handle_popup_events(key_event); },
+            &PopupState::MODIFY             => { self.modify_popup.handle_popup_events(key_event); },
+            &PopupState::DELETE             => { self.delete_popup.handle_popup_events(key_event); },
+            _ => {}
+        }
+    }
+
+    fn handle_events(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Enter                  => { self.set_active_playlist(); },
+            KeyCode::Up                     => { self.previous(); },
+            KeyCode::Down                   => { self.next(); },
+            _ => {}
+        }
+    }
+
+    fn get_hotkeys(&mut self, mode: &PopupState) -> String {
+        match mode {
+            &PopupState::ADD => { String::from("Switch Answer <Tab> - Select <Enter> - Close <Esc>") },
+            &PopupState::MODIFY => { String::from("Modify <Enter> - Close <Esc>") },
+            &PopupState::DELETE => { String::from("Switch Answer <Tab> - Select <Enter> - Close <Esc>") },
+            _ => { String::from("Navigate <Up/Down> - Select <Enter> - All songs to queue <Backtab> - New <A> - Modify <M> - Remove <Delete> - Switch Mode <Tab> - Quit <Q>") }
+        }
+    }
+
     fn update(&mut self) {}
+
+    fn render_popups(&mut self, frame: &mut Frame, mode: &PopupState) {
+        match mode {
+            &PopupState::ADD                => { self.add_popup.render(frame); },
+            &PopupState::MODIFY             => { self.modify_popup.render(frame); },
+            &PopupState::DELETE             => { self.delete_popup.render(frame); },
+            _ => {}
+        }
+    }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let mut playlists_datas: Vec<Row> = Vec::new();

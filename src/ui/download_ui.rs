@@ -1,4 +1,5 @@
 use ratatui::{
+    crossterm::event::{KeyCode, KeyEvent},
     layout::{Constraint, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -8,9 +9,9 @@ use ratatui::{
 use tokio;
 use tokio::sync::watch::{self, Receiver, Sender};
 
-use super::{Service, ServiceName};
-use crate::tools::InputTool;
 use crate::api;
+use crate::tools::InputTool;
+use crate::ui::{PopupState, Service, ServiceName};
 
 pub struct DownloadService {
     pub service_name: ServiceName,
@@ -25,7 +26,7 @@ impl DownloadService {
     // Download and normalize song(s)
     pub fn download(&mut self) {
         self.started = true;
-        api::download_song(self.sender.clone(), self.get_input(), String::from("All songs"));
+        api::download_song(self.sender.clone(), self.get_input_tool().get_input(), String::from("All songs"));
     }
 
     // Update progress bar when downloading song(s)
@@ -43,32 +44,35 @@ impl DownloadService {
                 match downloading_percent {
                     x if (0.0..=100.0).contains(&x) => {
                         self.persistent_percent = downloading_percent / 100.0;
-                        self.set_input(format!("Download {}: {}%", index_of_total, downloading_percent));
+                        self.get_input_tool().set_input(format!("Download {}: {}%", index_of_total, downloading_percent));
                     }
                     x if x == -1.0 => {
                         self.persistent_percent = 0.0;
-                        self.set_input("Download successfull !".to_string());
+                        self.get_input_tool().set_input("Download successfull !".to_string());
                     }
                     x if x == -2.0 => {
-                        self.set_input("Installing librairies ...".to_string());
+                        self.get_input_tool().set_input("Installing librairies ...".to_string());
                     }
                     x if x == -3.0 => {
-                        self.set_input("Starting to fetch datas from YouTube URL ...".to_string());
+                        self.get_input_tool().set_input("Checking internet connection ...".to_string());
                     }
                     x if x == -4.0 => {
-                        self.set_input("Check integrity and finalize ...".to_string());
+                        self.get_input_tool().set_input("Starting to fetch datas from YouTube URL ...".to_string());
+                    }
+                    x if x == -5.0 => {
+                        self.get_input_tool().set_input("Check integrity and finalize ...".to_string());
                     }
                     x if x == -51.0 => {
                         self.persistent_percent = 0.0;
-                        self.set_input("Skip already downloaded songs and other ones successfully downloaded !".to_string());
+                        self.get_input_tool().set_input("Skip already downloaded songs and other ones successfully downloaded !".to_string());
                     }
                     x if x == -98.0 => {
                         self.started = false;
-                        self.set_input("No internet connection !".to_string());
+                        self.get_input_tool().set_input("No internet connection !".to_string());
                     }
                     x if x == -99.0 => {
                         self.started = false;
-                        self.set_input("Unsupported architecture ! Please report it to making an issue in Github !".to_string());
+                        self.get_input_tool().set_input("Unsupported architecture ! Please report it to making an issue in Github !".to_string());
                     }
                     _ => {}
                 }
@@ -89,12 +93,12 @@ impl DownloadService {
                 match normalizing_percent {
                     x if (0.0..=100.0).contains(&x) => {
                         self.persistent_percent = normalizing_percent / 100.0;
-                        self.set_input(format!("Normalize {}: {}%", index_of_total, normalizing_percent));
+                        self.get_input_tool().set_input(format!("Normalize {}: {}%", index_of_total, normalizing_percent));
                     }
                     x if x == -1.0 => {
                         self.persistent_percent = 0.0;
                         self.started = false;
-                        self.set_input("Normalization successfull !".to_string());
+                        self.get_input_tool().set_input("Normalization successfull !".to_string());
                     }
                     _ => {}
                 }
@@ -102,36 +106,8 @@ impl DownloadService {
         }
     }
 
-    pub fn left_input_position(&mut self) {
-        self.input.left_input_position();
-    }
-
-    pub fn right_input_position(&mut self) {
-        self.input.right_input_position();
-    }
-
-    pub fn remove_previous_char_from_input(&mut self) {
-        self.input.remove_previous_char_from_input();
-    }
-
-    pub fn remove_next_char_from_input(&mut self) {
-        self.input.remove_next_char_from_input();
-    }
-
-    pub fn add_char_to_input(&mut self, new_char: char) {
-        self.input.add_char_to_input(new_char);
-    }
-
-    pub fn set_input(&mut self, new_input: String) {
-        self.input.set_input(new_input);
-    }
-
-    pub fn get_input(&mut self) -> String {
-        self.input.get_input()
-    }
-
-    pub fn get_input_position(&mut self) -> usize {
-        self.input.get_position()
+    pub fn get_input_tool(&mut self) -> &mut InputTool {
+        &mut self.input
     }
 }
 
@@ -153,10 +129,30 @@ impl Service for DownloadService {
         &self.service_name
     }
 
+    fn handle_popup_events(&mut self, _key_event: KeyEvent, _mode: &PopupState) {}
+
+    fn handle_events(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Left                   => { self.get_input_tool().left_input_position(); },
+            KeyCode::Right                  => { self.get_input_tool().right_input_position(); },
+            KeyCode::Enter                  => { self.download(); },
+            KeyCode::Backspace              => { self.get_input_tool().remove_previous_char_from_input(); },
+            KeyCode::Delete                 => { self.get_input_tool().remove_next_char_from_input(); },
+            KeyCode::Char(to_insert)        => { self.get_input_tool().add_char_to_input(to_insert); },
+            _ => {}
+        }
+    }
+
+    fn get_hotkeys(&mut self, _mode: &PopupState) -> String {
+        String::from("Navigate <Left/Right> - Download <Enter> - Switch Mode <Tab>")
+    }
+
     fn update(&mut self) {
         self.update_download_status();
         self.update_normalization_status();
     }
+
+    fn render_popups(&mut self, _frame: &mut Frame, _mode: &PopupState) {}
 
     fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName) {
         let chunks = Layout::vertical([
@@ -173,7 +169,7 @@ impl Service for DownloadService {
             .border_style(download_border_style);
         frame.render_widget(downloading_section, area);
 
-        let input = self.get_input();
+        let input = self.get_input_tool().get_input();
         let downloading_label = Span::styled(
             &input,
             Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC),
@@ -186,7 +182,7 @@ impl Service for DownloadService {
 
         if is_active {
             frame.set_cursor_position(Position::new(
-                ((chunks[0].right() - chunks[0].left()) + self.get_input().len() as u16) / 2 + 4 - self.get_input_position() as u16,
+                ((chunks[0].right() - chunks[0].left()) + self.get_input_tool().get_input().len() as u16) / 2 + 4 - self.get_input_tool().get_position() as u16,
                 chunks[0].top()
             ));
         }

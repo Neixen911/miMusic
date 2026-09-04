@@ -1,15 +1,23 @@
 use ratatui::{
+    crossterm::event::KeyEvent,
     layout::Rect,
     Frame
 };
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum ServiceName {
-    NONE,
     PLAYER,
     DOWNLOAD,
     SONGS,
     PLAYLISTS
+}
+
+#[derive(Debug, PartialEq)]
+pub enum PopupState {
+    NONE,
+    ADD,
+    MODIFY,
+    DELETE
 }
 
 pub trait Service {
@@ -17,7 +25,19 @@ pub trait Service {
     where
         Self: Sized;
     fn get_name(&self) -> &ServiceName;
+    fn handle_popup_events(&mut self, key_event: KeyEvent, mode: &PopupState)
+    where
+        Self: Sized;
+    fn handle_events(&mut self, key_event: KeyEvent)
+    where
+        Self: Sized;
+    fn get_hotkeys(&mut self, mode: &PopupState) -> String
+    where
+        Self: Sized;
     fn update(&mut self)
+    where
+        Self: Sized;
+    fn render_popups(&mut self, frame: &mut Frame, mode: &PopupState)
     where
         Self: Sized;
     fn render(&mut self, frame: &mut Frame, area: Rect, active_service: &ServiceName)

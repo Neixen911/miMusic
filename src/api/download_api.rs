@@ -112,6 +112,7 @@ pub async fn download_libs(libraries_dir: &PathBuf) {
 // Download song from a unique URL
 pub fn download_song(sender: Sender<(u32, u32, u32, f64)>, song_url: String, selected_playlist: String) {
     tokio::spawn( async move {
+        let _ = sender.send((1, 0, 0, -3.0));
         if let Ok(stream) = TcpStream::connect("8.8.4.4:53") {
             stream.shutdown(Shutdown::Both).expect("Can't shutdown stream check !");
         } else {
@@ -127,7 +128,7 @@ pub fn download_song(sender: Sender<(u32, u32, u32, f64)>, song_url: String, sel
             let _ = download_libs(&libraries_dir).await;
         }
 
-        let _ = sender.send((1, 0, 0, -3.0));
+        let _ = sender.send((1, 0, 0, -4.0));
         let mut yt_dlp = PathBuf::new();
         let mut ffmpeg = PathBuf::new();
         for filename in read_dir(&libraries_dir).expect("Can't iter over library folder !") {
@@ -209,7 +210,7 @@ pub fn download_song(sender: Sender<(u32, u32, u32, f64)>, song_url: String, sel
             let _ = sender.send((1, index, total, percent));
         }
         let _ = status.wait().expect("Can't download song !");
-        let _ = sender.send((1, 0, 0, -4.0));
+        let _ = sender.send((1, 0, 0, -5.0));
         
         let mut is_already_downloaded = false;
         for downloaded_song in downloaded_songs {
